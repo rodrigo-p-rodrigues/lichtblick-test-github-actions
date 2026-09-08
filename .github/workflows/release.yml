@@ -28,7 +28,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.LICHTBLICK_GITHUB_TOKEN }}
+          token: ${{ secrets.LICHTBLICK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           ref: main
           # Full history is required for the ancestry-based duplicate-release detection below.
           fetch-depth: 0
@@ -136,7 +136,7 @@ jobs:
           name: "v${{ env.version }}"
           commit: main
           generateReleaseNotes: true
-          token: ${{ secrets.LICHTBLICK_GITHUB_TOKEN }}
+          token: ${{ secrets.LICHTBLICK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           artifacts: |
             dist/lichtblick-${{ env.version }}-linux-amd64.deb
             dist/lichtblick-${{ env.version }}-linux-x64.tar.gz
@@ -152,4 +152,4 @@ jobs:
       - name: Trigger SonarCloud analysis
         run: gh workflow run sonarqube.yml --ref main
         env:
-          GH_TOKEN: ${{ secrets.LICHTBLICK_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.LICHTBLICK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
