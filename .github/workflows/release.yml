@@ -117,17 +117,17 @@ jobs:
           yarn run desktop:build:prod
           yarn run web:build:prod
 
-      - name: Build Windows
-        run: yarn run package:win
+      # - name: Build Windows
+      #   run: yarn run package:win
 
-      - name: Build Linux
-        run: yarn run package:linux
+      # - name: Build Linux
+      #   run: yarn run package:linux
 
-      - name: Build macOS
-        run: yarn run package:darwin
+      # - name: Build macOS
+      #   run: yarn run package:darwin
 
-      - name: Create web static files tarball
-        run: tar -czf dist/lichtblick-web.tar.gz -C web/.webpack .
+      # - name: Create web static files tarball
+      #   run: tar -czf dist/lichtblick-web.tar.gz -C web/.webpack .
 
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
