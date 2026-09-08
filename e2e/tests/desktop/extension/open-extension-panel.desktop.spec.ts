@@ -1,23 +1,24 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 import { test, expect } from "../../../fixtures/electron";
-import { loadFile } from "../../../fixtures/load-file";
+import { loadFiles } from "../../../fixtures/load-files";
+import { DataSourceDialog } from "../../../page-objects";
 
 /**
  * GIVEN the "turtlesim" extension file is loaded
  * WHEN the user adds the "Turtle" panel
  * THEN the "Turtle" panel should be visible on the screen
  */
-test("open extension panel", async ({ mainWindow }) => {
+test("open extension panel", { tag: "@regression" }, async ({ mainWindow }) => {
   // Given
   const filename = "lichtblick.suite-extension-turtlesim-0.0.1.foxe";
-  await loadFile({
+  await loadFiles({
     mainWindow,
-    filename,
+    filenames: filename,
   });
 
   // When
-  await mainWindow.getByTestId("DataSourceDialog").getByTestId("CloseIcon").click();
+  await new DataSourceDialog(mainWindow).close();
   await mainWindow.getByLabel("Add panel button").click();
   await mainWindow.getByText("Turtle [local]").click();
 

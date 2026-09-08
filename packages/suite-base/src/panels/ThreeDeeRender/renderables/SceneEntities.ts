@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -137,9 +137,7 @@ export class FoxgloveSceneEntities extends SceneExtension<TopicEntities> {
     const topicName = path[1]!;
     const renderable = this.renderables.get(topicName);
     if (renderable) {
-      const settings = this.renderer.config.topics[topicName] as
-        | Partial<LayerSettingsEntity>
-        | undefined;
+      const settings = this.renderer.config.topics[topicName];
       renderable.userData.settings = { ...SCENE_ENTITIES_DEFAULT_SETTINGS, ...settings };
       renderable.updateSettings();
     }
@@ -170,9 +168,7 @@ export class FoxgloveSceneEntities extends SceneExtension<TopicEntities> {
   #getTopicEntities(topic: string): TopicEntities {
     let topicEntities = this.renderables.get(topic);
     if (!topicEntities) {
-      const userSettings = this.renderer.config.topics[topic] as
-        | Partial<LayerSettingsEntity>
-        | undefined;
+      const userSettings = this.renderer.config.topics[topic];
 
       topicEntities = new TopicEntities(topic, this.#primitivePool, this.renderer, {
         receiveTime: -1n,

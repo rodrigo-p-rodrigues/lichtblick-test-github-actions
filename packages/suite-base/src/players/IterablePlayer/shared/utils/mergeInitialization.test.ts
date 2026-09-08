@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 import {
@@ -13,9 +13,9 @@ import {
   setStartTime,
 } from "@lichtblick/suite-base/players/IterablePlayer/shared/utils/mergeInitialization";
 import { TopicStats } from "@lichtblick/suite-base/players/types";
-import BasicBuilder from "@lichtblick/suite-base/testing/builders/BasicBuilder";
-import InitilizationSourceBuilder from "@lichtblick/suite-base/testing/builders/InitilizationSourceBuilder";
+import InitializationSourceBuilder from "@lichtblick/suite-base/testing/builders/InitializationSourceBuilder";
 import RosTimeBuilder from "@lichtblick/suite-base/testing/builders/RosTimeBuilder";
+import { BasicBuilder } from "@lichtblick/test-builders";
 
 describe("mergeInitialization utils", () => {
   describe("setStartTime", () => {
@@ -58,23 +58,23 @@ describe("mergeInitialization utils", () => {
 
   describe("mergeMetadata", () => {
     it("should merge two metadata arrays", () => {
-      const metadata1: InitMetadata = InitilizationSourceBuilder.metadataList(1);
-      const metadata2: InitMetadata = InitilizationSourceBuilder.metadataList(1);
+      const metadata1: InitMetadata = InitializationSourceBuilder.metadataList(1);
+      const metadata2: InitMetadata = InitializationSourceBuilder.metadataList(1);
 
       const result = mergeMetadata(metadata1, metadata2);
 
-      expect(result!.length).toBe(2);
+      expect(result!).toHaveLength(2);
       expect(result![0]).toEqual(metadata1[0]);
       expect(result![1]).toEqual(metadata2[0]);
     });
 
     it("should handle undefined metadata", () => {
-      const metadata1: InitMetadata = InitilizationSourceBuilder.metadataList(1);
+      const metadata1: InitMetadata = InitializationSourceBuilder.metadataList(1);
       const metadata2: InitMetadata = undefined;
 
       const result = mergeMetadata(metadata1, metadata2);
 
-      expect(result!.length).toBe(1);
+      expect(result!).toHaveLength(1);
       expect(result![0]).toEqual(metadata1[0]);
     });
 

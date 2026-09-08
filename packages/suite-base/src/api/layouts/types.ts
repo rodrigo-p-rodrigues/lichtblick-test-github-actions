@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 import { LayoutData, LayoutID } from "@lichtblick/suite-base/context/CurrentLayoutContext";
@@ -31,10 +31,10 @@ export interface LayoutApiData {
   permission: LayoutPermission;
   /** Source or origin information */
   from: string;
-  /** User who created the layout */
-  createdBy: string;
-  /** User who last updated the layout */
-  updatedBy: string;
+  /** Timestamp when the layout was created */
+  createdAt: string;
+  /** Timestamp when the layout was last updated */
+  updatedAt: string;
 }
 
 // =============================================================================
@@ -53,8 +53,6 @@ export interface CreateLayoutRequest {
   data: LayoutData;
   /** Permission level for the layout */
   permission: LayoutPermission;
-  /** User workspace */
-  workspace: string;
 }
 
 /**
@@ -102,6 +100,10 @@ export type UpdateLayoutResponse =
  * Response from layout creation/update operations containing server data
  */
 export type LayoutApiResponse = LayoutApiData;
+
+export type WorkspaceLayoutResponse = {
+  layout: LayoutApiData;
+};
 
 // =============================================================================
 // Service Layer Types

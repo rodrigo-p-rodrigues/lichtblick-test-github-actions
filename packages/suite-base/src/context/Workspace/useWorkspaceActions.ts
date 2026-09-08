@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -45,6 +45,11 @@ export type WorkspaceActions = {
   featureTourActions: {
     startTour: (tour: string) => void;
     finishTour: (tour: string) => void;
+  };
+
+  layoutBrowserActions: {
+    setPersonalSectionExpanded: Dispatch<SetStateAction<boolean>>;
+    setSharedSectionExpanded: Dispatch<SetStateAction<boolean>>;
   };
 
   openAccountSettings: () => void;
@@ -153,6 +158,26 @@ export function useWorkspaceActions(): WorkspaceActions {
           });
         },
       },
+
+      layoutBrowserActions: {
+        setPersonalSectionExpanded: (setter: SetStateAction<boolean>) => {
+          set((draft) => {
+            draft.layoutBrowser.expandedSections.personal = setterValue(
+              setter,
+              draft.layoutBrowser.expandedSections.personal,
+            );
+          });
+        },
+        setSharedSectionExpanded: (setter: SetStateAction<boolean>) => {
+          set((draft) => {
+            draft.layoutBrowser.expandedSections.shared = setterValue(
+              setter,
+              draft.layoutBrowser.expandedSections.shared,
+            );
+          });
+        },
+      },
+
       openAccountSettings: () => {},
       openPanelSettings: () => {
         set((draft) => {

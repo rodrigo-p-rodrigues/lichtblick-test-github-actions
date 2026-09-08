@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -30,6 +30,7 @@ import NoopMetricsCollector from "@lichtblick/suite-base/players/NoopMetricsColl
 import PlayerAlertManager from "@lichtblick/suite-base/players/PlayerAlertManager";
 import { subtractTimes } from "@lichtblick/suite-base/players/UserScriptPlayer/transformerWorker/typescript/userUtils/time";
 import { PLAYER_CAPABILITIES } from "@lichtblick/suite-base/players/constants";
+import { applySamplingGuardToSubscriptions } from "@lichtblick/suite-base/players/samplingGuard";
 import {
   AdvertiseOptions,
   Player,
@@ -44,6 +45,7 @@ import {
   TopicSelection,
   TopicStats,
 } from "@lichtblick/suite-base/players/types";
+import { HIGH_FREQUENCY_ALERT } from "@lichtblick/suite-base/players/utils/constants";
 import { isTopicHighFrequency } from "@lichtblick/suite-base/players/utils/isTopicHighFrequency";
 import { RosDatatypes } from "@lichtblick/suite-base/types/RosDatatypes";
 import delay from "@lichtblick/suite-base/util/delay";
@@ -51,13 +53,13 @@ import delay from "@lichtblick/suite-base/util/delay";
 import { BlockLoader } from "./BlockLoader";
 import { BufferedIterableSource } from "./BufferedIterableSource";
 import {
+  GetBackfillMessagesArgs,
   IDeserializedIterableSource,
   ISerializedIterableSource,
   IteratorResult,
 } from "./IIterableSource";
 
 const log = Log.getLogger(__filename);
-
 // Number of bytes that we aim to keep in the cache.
 // Setting this to higher than 1.5GB caused the renderer process to crash on linux.
 // See: https://github.com/foxglove/studio/pull/1733
@@ -83,8 +85,23 @@ const SEEK_ON_START_NS = BigInt(99 * 1e6);
 const MEMORY_INFO_BUFFERED_MSGS = "Buffered messages";
 
 const EMPTY_ARRAY = Object.freeze([]);
+/**
+ * Hook invoked on a seek to optionally expand the backfill messages before they are emitted, e.g.
+ * to replay a video GOP so a P/B-frame is decodable. It receives the raw backfill messages, a
+ * function to fetch further backfill from the source, and a getter for the current abort signal,
+ * and returns the (possibly expanded) message set. Kept generic so the player carries no
+ * codec-specific knowledge; the data-source layer decides whether to supply one.
+ *
+ * Not exported: it is referenced only by `IterablePlayerOptions` below; consumers supply a
+ * structurally-compatible function (e.g. `expandVideoSeekBackfill`) without naming the type.
+ */
+type ExpandBackfill = (
+  messages: MessageEvent[],
+  getBackfillMessages: (args: GetBackfillMessagesArgs) => Promise<MessageEvent[]>,
+  getAbortSignal: () => AbortSignal | undefined,
+) => Promise<MessageEvent[]>;
 
-export type IterablePlayerOptions = {
+type IterablePlayerOptions = {
   metricsCollector?: PlayerMetricsCollectorInterface;
 
   source: IDeserializedIterableSource | ISerializedIterableSource;
@@ -105,6 +122,10 @@ export type IterablePlayerOptions = {
 
   // Max. time that messages will be buffered ahead for smoother playback. (default: 10sec)
   readAheadDuration?: Time;
+
+  // Optional hook to expand the seek backfill (e.g. replay a video GOP). No-op when omitted,
+  // keeping the player free of codec-specific knowledge.
+  expandBackfill?: ExpandBackfill;
 };
 
 type IterablePlayerState =
@@ -137,6 +158,7 @@ export class IterablePlayer implements Player {
   #start?: Time;
   #end?: Time;
   #enablePreload = true;
+  readonly #expandBackfill?: ExpandBackfill;
 
   // next read start time indicates where to start reading for the next tick
   // after a tick read, it is set to 1nsec past the end of the read operation (preparing for the next tick)
@@ -177,6 +199,7 @@ export class IterablePlayer implements Player {
   #bufferedSource: IDeserializedIterableSource;
   // Buffering source implementation. We store a reference to it here so we can access buffer information such as loaded ranges & memory size.
   #bufferImpl: BufferedIterableSource;
+  readonly #deserializingSource?: DeserializingIterableSource;
 
   // Some states register an abort controller to signal they should abort
   #abort?: AbortController;
@@ -188,6 +211,7 @@ export class IterablePlayer implements Player {
   #blockLoadingProcess?: Promise<void>;
 
   #messageRangeSource?: IDeserializedIterableSource;
+  #samplingEnabled: boolean = false;
 
   #queueEmitState: ReturnType<typeof debouncePromise>;
 
@@ -210,6 +234,7 @@ export class IterablePlayer implements Player {
       enablePreload,
       sourceId,
       readAheadDuration = { sec: 10, nsec: 0 },
+      expandBackfill,
     } = options;
 
     this.#iterableSource = source;
@@ -223,15 +248,18 @@ export class IterablePlayer implements Player {
         maxCacheSizeBytes: 300 * MEGABYTE_IN_BYTES, // 300mb
       });
       this.#bufferImpl = bufferInterface;
-      this.#bufferedSource = new DeserializingIterableSource(bufferInterface);
+      this.#deserializingSource = new DeserializingIterableSource(bufferInterface);
+      this.#bufferedSource = this.#deserializingSource;
     }
 
     this.#name = name;
     this.#urlParams = urlParams;
     this.#metricsCollector = metricsCollector ?? new NoopMetricsCollector();
     this.#metricsCollector.playerConstructed();
+
     this.#enablePreload = enablePreload ?? true;
     this.#sourceId = sourceId;
+    this.#expandBackfill = expandBackfill;
 
     this.isClosed = new Promise((resolveClose) => {
       this.#resolveIsClosed = resolveClose;
@@ -341,7 +369,21 @@ export class IterablePlayer implements Player {
 
   public setSubscriptions(newSubscriptions: SubscribePayload[]): void {
     log.debug("set subscriptions", newSubscriptions);
-    this.#subscriptions = newSubscriptions;
+    this.#subscriptions = applySamplingGuardToSubscriptions(newSubscriptions);
+    this.#samplingEnabled = this.#subscriptions.some(
+      (subscription) => subscription.samplingRequest?.mode === "latest-per-render-tick",
+    );
+    // Warn once when sampling is requested on a deserialized source, where it is not supported.
+    // Sampling (latest-per-render-tick) is only implemented for serialized sources via
+    // DeserializingIterableSource. For deserialized sources all messages are yielded as-is.
+    if (!this.#samplingEnabled && this.#deserializingSource == undefined) {
+      log.debug(
+        "latest-per-render-tick sampling is not supported for deserialized sources. Messages will be delivered without sampling.",
+      );
+    }
+    if (!this.#samplingEnabled) {
+      this.#deserializingSource?.setSamplingWindowEnd(undefined);
+    }
 
     const allTopics: TopicSelection = new Map(
       this.#subscriptions.map((subscription) => [subscription.topic, subscription]),
@@ -359,6 +401,7 @@ export class IterablePlayer implements Player {
 
     this.#allTopics = allTopics;
     this.#preloadTopics = preloadTopics;
+
     this.#blockLoader?.setTopics(this.#preloadTopics);
 
     // If the player is playing, the playing state will detect any subscription changes and adjust
@@ -388,13 +431,23 @@ export class IterablePlayer implements Player {
 
   public getBatchIterator(
     topic: string,
+    options?: { start?: Time; end?: Time },
   ): AsyncIterableIterator<Readonly<IteratorResult>> | undefined {
     const topicSelection = new Map([[topic, { topic }]]);
 
     return this.#messageRangeSource?.messageIterator({
       topics: topicSelection,
       consumptionType: "full",
+      start: options?.start,
+      end: options?.end,
     });
+  }
+
+  // Reuses #messageRangeSource (already independent of the live playback cursor/state machine,
+  // same source instance used by getBatchIterator) so point-in-time reads never interfere with
+  // seeking/backfilling the live playhead and can safely run concurrently with each other.
+  public async getBackfillMessages(args: GetBackfillMessagesArgs): Promise<MessageEvent[]> {
+    return (await this.#messageRangeSource?.getBackfillMessages(args)) ?? [];
   }
 
   public setParameter(_key: string, _value: ParameterValue): void {
@@ -419,6 +472,13 @@ export class IterablePlayer implements Player {
 
   public getMetadata(): ReadonlyArray<Readonly<Metadata>> {
     return this.#metadata;
+  }
+
+  /** Whether a state transition has been requested. Used to re-check after awaiting; reading
+   * through a method avoids the type checker narrowing `#nextState` to a constant across `await`
+   * boundaries */
+  #hasPendingState(): boolean {
+    return this.#nextState != undefined;
   }
 
   /** Request the state to switch to newState */
@@ -555,7 +615,7 @@ export class IterablePlayer implements Player {
       const uniqueTopics = new Map<string, Topic>();
       const duration = subtractTimes(this.#end, this.#start);
       this.#providerTopicStats = topicStats;
-      let highFrequencyTopicFound = false;
+      let hasHighFrequencyTopic = false;
 
       for (const topic of topics) {
         const existingTopic = uniqueTopics.get(topic.name);
@@ -569,14 +629,20 @@ export class IterablePlayer implements Player {
         }
         uniqueTopics.set(topic.name, topic);
 
-        if (!highFrequencyTopicFound) {
-          highFrequencyTopicFound = isTopicHighFrequency(
+        if (!hasHighFrequencyTopic) {
+          hasHighFrequencyTopic = isTopicHighFrequency({
             topicStats,
-            topic.name,
+            topic,
             duration,
-            topic.schemaName,
-            this.#alertManager,
-          );
+          });
+
+          if (hasHighFrequencyTopic) {
+            this.#alertManager.addAlert(HIGH_FREQUENCY_ALERT.id, {
+              severity: HIGH_FREQUENCY_ALERT.severity,
+              message: HIGH_FREQUENCY_ALERT.message,
+              error: new Error(HIGH_FREQUENCY_ALERT.errorMessage),
+            });
+          }
         }
       }
 
@@ -676,6 +742,7 @@ export class IterablePlayer implements Player {
 
     // set the playIterator to the seek time
     await this.#bufferImpl.stopProducer();
+    this.#lastStamp = undefined;
 
     log.debug("Initializing forward iterator from", next);
     this.#playbackIterator = this.#bufferedSource.messageIterator({
@@ -713,6 +780,9 @@ export class IterablePlayer implements Player {
       this.#start,
       this.#end,
     );
+    if (this.#samplingEnabled) {
+      this.#deserializingSource?.setSamplingWindowEnd(stopTime);
+    }
 
     log.debug(`Playing from ${toString(this.#start)} to ${toString(stopTime)}`);
 
@@ -758,7 +828,9 @@ export class IterablePlayer implements Player {
         }
 
         if (iterResult.type === "stamp" && compare(iterResult.stamp, stopTime) >= 0) {
-          this.#lastStamp = iterResult.stamp;
+          if (!this.#lastStamp || compare(iterResult.stamp, this.#lastStamp) > 0) {
+            this.#lastStamp = iterResult.stamp;
+          }
           break;
         }
 
@@ -813,11 +885,21 @@ export class IterablePlayer implements Player {
 
     try {
       this.#abort = new AbortController();
-      const messages = await this.#bufferedSource.getBackfillMessages({
+      const backfillMessages = await this.#bufferedSource.getBackfillMessages({
         topics: this.#allTopics,
         time: targetTime,
         abortSignal: this.#abort.signal,
       });
+      // An optional, source-supplied hook may expand the backfill before emit (e.g. replaying a
+      // video GOP so a P/B-frame is decodable). When no hook is supplied the raw backfill is used
+      // unchanged, keeping the player itself free of codec-specific knowledge.
+      const messages = this.#expandBackfill
+        ? await this.#expandBackfill(
+            backfillMessages,
+            this.#bufferedSource.getBackfillMessages.bind(this.#bufferedSource),
+            () => this.#abort?.signal,
+          )
+        : backfillMessages;
 
       // We've successfully loaded the messages and will emit those, no longer need the ackTimeout
       clearTimeout(seekAckTimeout);
@@ -832,6 +914,20 @@ export class IterablePlayer implements Player {
       this.#presence = PlayerPresence.PRESENT;
       this.#queueEmitState();
       await this.#resetPlaybackIterator();
+
+      // When seeking while playing, park the cursor on the seek target until the emitted frame is
+      // actually rendered. The render barrier (the panel `done` callback) now waits for in-flight
+      // video decode, so awaiting the emit blocks here until the seek frame is painted instead of
+      // resuming playback and racing the video forward to catch up.
+      if (this.#isPlaying) {
+        await this.#queueEmitState.currentPromise;
+        if (this.#hasPendingState()) {
+          return;
+        }
+        this.#lastTickMillis = undefined;
+        this.#lastRangeMillis = undefined;
+      }
+
       this.#setState(this.#isPlaying ? "play" : "idle");
     } catch (e: unknown) {
       const err = e as Error;
@@ -953,6 +1049,9 @@ export class IterablePlayer implements Player {
     // The end time is inclusive.
     const targetTime = add(this.#currentTime, fromMillis(rangeMillis));
     const end: Time = clampTime(targetTime, this.#start, this.#untilTime ?? this.#end);
+    if (this.#samplingEnabled) {
+      this.#deserializingSource?.setSamplingWindowEnd(end);
+    }
 
     // If a lastStamp is available from the previous tick we check the stamp against our current
     // tick's end time. If this stamp is after our current tick's end time then we don't need to
@@ -969,7 +1068,6 @@ export class IterablePlayer implements Player {
         this.#currentTime = end;
         this.#messages = [];
         this.#queueEmitState();
-
         if (this.#untilTime && compare(this.#currentTime, this.#untilTime) >= 0) {
           this.pausePlayback();
         }
@@ -1180,6 +1278,7 @@ export class IterablePlayer implements Player {
 
   async #stateClose() {
     this.#isPlaying = false;
+
     await this.#blockLoader?.stopLoading();
     await this.#blockLoadingProcess;
     await this.#bufferImpl.terminate();

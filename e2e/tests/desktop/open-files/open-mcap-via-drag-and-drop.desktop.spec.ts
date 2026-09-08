@@ -1,18 +1,18 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 import { test, expect } from "../../../fixtures/electron";
-import { loadFile } from "../../../fixtures/load-file";
+import { loadFiles } from "../../../fixtures/load-files";
 
 /**
  * GIVEN a .mcap file is loaded via drag and drop
  * THEN the filename should be visible and the "Play" button enabled
  */
-test("should open an MCAP file via drag and drop", async ({ mainWindow }) => {
+test("should open an MCAP file via drag and drop", { tag: "@smoke" }, async ({ mainWindow }) => {
   // Given
   const filename = "example.mcap";
-  await loadFile({
+  await loadFiles({
     mainWindow,
-    filename,
+    filenames: filename,
   });
 
   // Then

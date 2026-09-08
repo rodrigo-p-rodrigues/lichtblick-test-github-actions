@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -17,6 +17,7 @@ import {
   FetchAssetStatus,
   FetchAssetResponse,
   BinaryOpcode,
+  IWebSocket,
 } from "@foxglove/ws-protocol";
 import * as base64 from "@protobufjs/base64";
 import * as _ from "lodash-es";
@@ -29,7 +30,14 @@ import { MessageDefinition, isMsgDefEqual } from "@lichtblick/message-definition
 import CommonRosTypes from "@lichtblick/rosmsg-msgs-common";
 import { MessageWriter as Ros1MessageWriter } from "@lichtblick/rosmsg-serialization";
 import { MessageWriter as Ros2MessageWriter } from "@lichtblick/rosmsg2-serialization";
-import { fromMillis, fromNanoSec, isGreaterThan, isLessThan, Time } from "@lichtblick/rostime";
+import {
+  fromMillis,
+  fromNanoSec,
+  isGreaterThan,
+  isLessThan,
+  subtract,
+  Time,
+} from "@lichtblick/rostime";
 import { ParameterValue } from "@lichtblick/suite";
 import { Asset } from "@lichtblick/suite-base/components/PanelExtensionAdapter";
 import PlayerAlertManager from "@lichtblick/suite-base/players/PlayerAlertManager";
@@ -48,6 +56,8 @@ import {
   Topic,
   TopicStats,
 } from "@lichtblick/suite-base/players/types";
+import { HIGH_FREQUENCY_ALERT } from "@lichtblick/suite-base/players/utils/constants";
+import { isTopicHighFrequency } from "@lichtblick/suite-base/players/utils/isTopicHighFrequency";
 import rosDatatypesToMessageDefinition from "@lichtblick/suite-base/util/rosDatatypesToMessageDefinition";
 
 import { JsonMessageWriter } from "./JsonMessageWriter";
@@ -63,11 +73,7 @@ import {
   SUPPORTED_SERVICE_ENCODINGS,
   ZERO_TIME,
 } from "./constants";
-import {
-  checkForHighFrequencyTopics,
-  dataTypeToFullName,
-  statusLevelToAlertSeverity,
-} from "./helpers";
+import { dataTypeToFullName, statusLevelToAlertSeverity } from "./helpers";
 import {
   MessageWriter,
   MessageDefinitionMap,
@@ -142,6 +148,7 @@ export default class FoxgloveWebSocketPlayer implements Player {
   #fetchedAssets = new Map<string, Promise<Asset>>();
   #parameterTypeByName = new Map<string, Parameter["type"]>();
   #messageSizeEstimateByTopic: Record<string, number> = {};
+  #ishighFrequencyMessage = false;
 
   public constructor({
     url,
@@ -180,11 +187,13 @@ export default class FoxgloveWebSocketPlayer implements Player {
       this.#client?.close();
     }, 10000);
 
+    const subprotocols = [FoxgloveClient.SUPPORTED_SUBPROTOCOL, "foxglove.sdk.v1"];
+
     this.#client = new FoxgloveClient({
       ws:
         typeof Worker !== "undefined"
-          ? new WorkerSocketAdapter(this.#url, [FoxgloveClient.SUPPORTED_SUBPROTOCOL])
-          : new WebSocket(this.#url, [FoxgloveClient.SUPPORTED_SUBPROTOCOL]),
+          ? new WorkerSocketAdapter(this.#url, subprotocols)
+          : (new WebSocket(this.#url, subprotocols) as IWebSocket),
     });
 
     this.#client.on("open", () => {
@@ -215,6 +224,7 @@ export default class FoxgloveWebSocketPlayer implements Player {
       this.#advertisedServices = undefined;
       this.#datatypes = new Map();
       this.#parameters = new Map();
+      this.#ishighFrequencyMessage = false;
     });
 
     this.#client.on("error", (err) => {
@@ -229,7 +239,7 @@ export default class FoxgloveWebSocketPlayer implements Player {
           message: "Insecure WebSocket connection",
           tip: `Check that the WebSocket server at ${
             this.#url
-          } is reachable and supports protocol version ${FoxgloveClient.SUPPORTED_SUBPROTOCOL}.`,
+          } is reachable and supports protocol version one of: ${subprotocols.join(", ")}.`,
         });
         this.#emitState();
       }
@@ -261,7 +271,7 @@ export default class FoxgloveWebSocketPlayer implements Player {
         message: "Connection failed",
         tip: `Check that the WebSocket server at ${
           this.#url
-        } is reachable and supports protocol version ${FoxgloveClient.SUPPORTED_SUBPROTOCOL}.`,
+        } is reachable and supports protocol version one of: ${subprotocols.join(", ")}.`,
       });
 
       this.#emitState();
@@ -566,13 +576,22 @@ export default class FoxgloveWebSocketPlayer implements Player {
         stats.numMessages++;
         this.#topicsStats = topicStats;
 
-        checkForHighFrequencyTopics({
-          alerts: this.#alerts,
-          endTime: this.#endTime,
-          startTime: this.#startTime,
-          topics: this.#topics,
-          topicStats: this.#topicsStats,
-        });
+        if (!this.#ishighFrequencyMessage) {
+          const duration =
+            this.#startTime && this.#endTime ? subtract(this.#endTime, this.#startTime) : undefined;
+          this.#ishighFrequencyMessage = isTopicHighFrequency({
+            topicStats: this.#topicsStats,
+            topic: { name: topic, schemaName: chanInfo.channel.schemaName },
+            duration,
+          });
+          if (this.#ishighFrequencyMessage) {
+            this.#alerts.addAlert(HIGH_FREQUENCY_ALERT.id, {
+              severity: HIGH_FREQUENCY_ALERT.severity,
+              message: HIGH_FREQUENCY_ALERT.message,
+              error: new Error(HIGH_FREQUENCY_ALERT.errorMessage),
+            });
+          }
+        }
       } catch (error) {
         this.#alerts.addAlert(`message:${chanInfo.channel.topic}`, {
           severity: "error",
@@ -1144,7 +1163,7 @@ export default class FoxgloveWebSocketPlayer implements Player {
           const data = parsedResponse.deserialize(response.data);
           resolve(data as Record<string, unknown>);
         } catch (error: unknown) {
-          reject(error as Error);
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
       });
     });
@@ -1348,9 +1367,7 @@ export default class FoxgloveWebSocketPlayer implements Player {
           severity: "error",
         });
       } else {
-        if (updatedDatatypes == undefined) {
-          updatedDatatypes = new Map(this.#datatypes);
-        }
+        updatedDatatypes ??= new Map(this.#datatypes);
         updatedDatatypes.set(name, types);
 
         const fullTypeName = dataTypeToFullName(name);

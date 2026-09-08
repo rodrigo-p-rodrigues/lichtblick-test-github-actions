@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import HoverableIconButton from "@lichtblick/suite-base/components/HoverableIconButton";
 import { useMessagePipeline } from "@lichtblick/suite-base/components/MessagePipeline";
+import { useStyles } from "@lichtblick/suite-base/components/PlaybackSpeedControls.style";
 import {
   LayoutState,
   useCurrentLayoutActions,
@@ -26,6 +27,7 @@ const configSpeedSelector = (state: LayoutState) =>
   state.selectedLayout?.data?.playbackConfig.speed;
 
 export default function PlaybackSpeedControls(): React.JSX.Element {
+  const { classes } = useStyles();
   const [anchorEl, setAnchorEl] = useState<undefined | HTMLElement>(undefined);
   const open = Boolean(anchorEl);
   const configSpeed = useCurrentLayoutSelector(configSpeedSelector);
@@ -62,14 +64,22 @@ export default function PlaybackSpeedControls(): React.JSX.Element {
   return (
     <>
       <HoverableIconButton
-        disabled={setPlaybackSpeed == undefined}
-        size="small"
-        title="Playback speed"
-        icon={<ArrowDropDownIcon />}
-        activeIcon={<ArrowDropDownIcon />}
+        id="playback-speed-button"
+        aria-controls={open ? "playback-speed-menu" : undefined}
+        aria-haspopup="true"
+        aria-expanded={open ? "true" : undefined}
+        icon={<ArrowDropDownIcon fontSize="small" />}
+        iconPosition="end"
         onClick={handleClick}
         data-testid="PlaybackSpeedControls-Dropdown"
-      />
+        disabled={setPlaybackSpeed == undefined}
+        title="Playback speed"
+        color="inherit"
+      >
+        <span className={classes.speedText}>
+          {displayedSpeed == undefined ? "–" : formatSpeed(displayedSpeed)}
+        </span>
+      </HoverableIconButton>
       <Menu
         id="playback-speed-menu"
         anchorEl={anchorEl}

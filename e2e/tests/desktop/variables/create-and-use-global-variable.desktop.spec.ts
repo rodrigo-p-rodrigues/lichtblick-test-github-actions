@@ -1,8 +1,9 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 import { test, expect } from "../../../fixtures/electron";
-import { loadFile } from "../../../fixtures/load-file";
+import { loadFiles } from "../../../fixtures/load-files";
+import { PlayerControls, Sidebar } from "../../../page-objects";
 
 /**
  * Given the file example.bag is loaded
@@ -13,16 +14,21 @@ import { loadFile } from "../../../fixtures/load-file";
  * When Raw Messages is filtered for `/tf.transforms[:]{child_frame_id==$globalVariable}`
  * Then a message with `child_frame_id` equal to "turtle1" should be visible
  */
-test("Create global variable and use it on Raw Messages Panel", async ({ mainWindow }) => {
+test("Create global variable and use it on Raw Messages Panel", { tag: "@regression" }, async ({
+  mainWindow,
+}) => {
+  const player = new PlayerControls(mainWindow);
+  const sidebar = new Sidebar(mainWindow);
+
   // Given
   const filename = "example.bag";
-  await loadFile({
+  await loadFiles({
     mainWindow,
-    filename,
+    filenames: filename,
   });
 
   // When
-  await mainWindow.getByTestId("right-sidebar-button").click();
+  await sidebar.toggleRightSidebar();
   await mainWindow.getByTestId("add-variable-button").click();
 
   const newVariableNameInput = mainWindow.getByPlaceholder("variable_name");
@@ -34,7 +40,7 @@ test("Create global variable and use it on Raw Messages Panel", async ({ mainWin
   await newVariableValueInput.press("Backspace");
   await newVariableValueInput.fill('"turtle1"');
 
-  await mainWindow.getByRole("button", { name: "Play", exact: true }).click();
+  await player.play();
 
   // Then
   await expect(mainWindow.getByText("No topic selected")).toBeVisible();
@@ -44,5 +50,7 @@ test("Create global variable and use it on Raw Messages Panel", async ({ mainWin
   await rawMessagesInputBar.fill("/tf.transforms[:]{child_frame_id==$globalVariable}");
 
   // Then
-  await expect(mainWindow.getByText('child_frame_id "turtle1"')).toBeVisible();
+  const rawMessagesPanel = mainWindow.getByTestId("panel-scroll-container");
+  await expect(rawMessagesPanel.getByText("child_frame_id").first()).toBeVisible();
+  await expect(rawMessagesPanel.getByText('"turtle1"').first()).toBeVisible();
 });

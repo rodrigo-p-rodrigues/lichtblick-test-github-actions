@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -9,7 +9,7 @@ import * as _ from "lodash-es";
 
 import { MutexLocked } from "@lichtblick/den/async";
 import { Time } from "@lichtblick/rostime";
-import { Immutable, Metadata, ParameterValue } from "@lichtblick/suite";
+import { Immutable, Metadata, MessageEvent, ParameterValue } from "@lichtblick/suite";
 import { Asset } from "@lichtblick/suite-base/components/PanelExtensionAdapter";
 import { GlobalVariables } from "@lichtblick/suite-base/hooks/useGlobalVariables";
 import {
@@ -27,7 +27,7 @@ import {
   StateProcessorFactory,
   TopicAliasFunctions,
 } from "./StateProcessorFactory";
-import { IteratorResult } from "../IterablePlayer/IIterableSource";
+import { GetBackfillMessagesArgs, IteratorResult } from "../IterablePlayer/IIterableSource";
 
 export type { TopicAliasFunctions };
 
@@ -76,8 +76,15 @@ export class TopicAliasingPlayer implements Player {
 
   public getBatchIterator(
     topic: string,
+    options?: { start?: Time; end?: Time },
   ): AsyncIterableIterator<Readonly<IteratorResult>> | undefined {
-    return this.#player.getBatchIterator(topic);
+    return this.#player.getBatchIterator(topic, options);
+  }
+
+  // No alias translation, matching getBatchIterator above — these unstable/advanced APIs
+  // operate on raw underlying topic names.
+  public async getBackfillMessages(args: GetBackfillMessagesArgs): Promise<MessageEvent[]> {
+    return (await this.#player.getBackfillMessages?.(args)) ?? [];
   }
 
   public setListener(listener: (playerState: PlayerState) => Promise<void>): void {

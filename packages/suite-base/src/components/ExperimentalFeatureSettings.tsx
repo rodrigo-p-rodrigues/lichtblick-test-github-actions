@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -75,7 +75,7 @@ function ExperimentalFeatureItem(props: { feature: Feature }) {
           checked={enabled ?? false}
           onChange={(_, checked) => {
             void setEnabled(checked);
-            void analytics.logEvent(AppEvent.EXPERIMENTAL_FEATURE_TOGGLE, {
+            analytics.logEvent(AppEvent.EXPERIMENTAL_FEATURE_TOGGLE, {
               feature: feature.key,
               checked,
             });

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -6,13 +6,13 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/
 
 import { Time, toRFC3339String } from "@lichtblick/rostime";
-import BasicBuilder from "@lichtblick/suite-base/testing/builders/BasicBuilder";
 import {
   AppURLState,
   updateAppURLState,
   parseAppURLState,
 } from "@lichtblick/suite-base/util/appURLState";
 import isDesktopApp from "@lichtblick/suite-base/util/isDesktopApp";
+import { BasicBuilder } from "@lichtblick/test-builders";
 
 jest.mock("@lichtblick/suite-base/util/isDesktopApp", () => ({
   __esModule: true,
@@ -97,6 +97,97 @@ describe("app state url parser", () => {
         dsParams: { bar: "barValue", baz: "bazValue" },
       });
     });
+
+    it("parses numeric epoch timestamp (seconds with nanoseconds)", () => {
+      const url = urlBuilder();
+      const dataSourceUrl = new URL(`http://${BasicBuilder.string()}.com`);
+      url.searchParams.append("ds", "remote-file");
+      url.searchParams.append("ds.url", dataSourceUrl.href);
+      url.searchParams.append("time", "1751378709.331000000");
+
+      const parsed = parseAppURLState(url);
+
+      expect(parsed).toMatchObject({
+        ds: "remote-file",
+        time: { sec: 1751378709, nsec: 331000000 },
+        dsParams: { url: dataSourceUrl.href },
+      });
+    });
+
+    it("parses RFC3339 timestamp format", () => {
+      const url = urlBuilder();
+      const dataSourceUrl = new URL(`http://${BasicBuilder.string()}.com`);
+      url.searchParams.append("ds", "remote-file");
+      url.searchParams.append("ds.url", dataSourceUrl.href);
+      url.searchParams.append("time", "2025-07-01T14:05:09.331293771Z");
+
+      const parsed = parseAppURLState(url);
+
+      expect(parsed).toMatchObject({
+        ds: "remote-file",
+        time: { sec: 1751378709, nsec: 331293771 },
+        dsParams: { url: dataSourceUrl.href },
+      });
+    });
+
+    it("parses layoutUrl from URL", () => {
+      const url = urlBuilder();
+      url.searchParams.append("layoutUrl", "http://example.com/layout.json");
+
+      expect(parseAppURLState(url)).toMatchObject({
+        layoutUrl: "http://example.com/layout.json",
+      });
+    });
+
+    it("parses both ds and layoutUrl from URL", () => {
+      const url = urlBuilder();
+      url.searchParams.append("ds", "ros1-remote-bagfile");
+      url.searchParams.append("ds.url", "http://example.com/test.bag");
+      url.searchParams.append("layoutUrl", "http://example.com/layout.json");
+
+      expect(parseAppURLState(url)).toMatchObject({
+        ds: "ros1-remote-bagfile",
+        dsParams: {
+          url: "http://example.com/test.bag",
+        },
+        layoutUrl: "http://example.com/layout.json",
+      });
+    });
+    it("parses mcap-bundle query parameter", () => {
+      const url = urlBuilder();
+      const mcapBundleId = BasicBuilder.string();
+      url.searchParams.append("mcap-bundle", mcapBundleId);
+
+      const parsed = parseAppURLState(url);
+
+      expect(parsed).toMatchObject({
+        mcapBundleId,
+      });
+    });
+
+    it("parses mcap-bundle alongside time and other params", () => {
+      const url = urlBuilder();
+      const mcapBundleId = BasicBuilder.string();
+      url.searchParams.append("mcap-bundle", mcapBundleId);
+      url.searchParams.append("time", "2025-07-01T14:05:09.331293771Z");
+
+      const parsed = parseAppURLState(url);
+
+      expect(parsed).toMatchObject({
+        mcapBundleId,
+        time: { sec: 1751378709, nsec: 331293771 },
+      });
+    });
+
+    it("returns undefined mcapBundleId when not present", () => {
+      const url = urlBuilder();
+      url.searchParams.append("ds", "remote-file");
+      url.searchParams.append("ds.url", `http://${BasicBuilder.string()}.com/file.mcap`);
+
+      const parsed = parseAppURLState(url);
+
+      expect(parsed?.mcapBundleId).toBeUndefined();
+    });
   });
 });
 
@@ -150,6 +241,42 @@ describe("updateAppURLState", () => {
     expect(result.href).toEqual(
       `${baseURL.origin}/?ds=${urlState.ds}&ds.${key}=${paramArray[0]}&ds.${key}=${paramArray[1]}`,
     );
+  });
+
+  it("encodes layoutUrl", () => {
+    const urlState: AppURLState = {
+      time: undefined,
+      layoutUrl: "http://example.com/layout.json",
+    };
+
+    const result = updateAppURLState(baseURL, urlState);
+
+    expect(result.searchParams.get("layoutUrl")).toBe("http://example.com/layout.json");
+  });
+
+  it("encodes both ds and layoutUrl", () => {
+    const testUrl = `${baseURL.origin}/${BasicBuilder.string()}.bag`;
+    const urlState: AppURLState = {
+      time: undefined,
+      ds: "ros1-remote-bagfile",
+      dsParams: {
+        url: testUrl,
+      },
+      layoutUrl: "http://example.com/layout.json",
+    };
+
+    const result = updateAppURLState(baseURL, urlState);
+
+    expect(result.searchParams.get("ds")).toBe("ros1-remote-bagfile");
+    expect(result.searchParams.get("layoutUrl")).toBe("http://example.com/layout.json");
+    expect(result.searchParams.get("ds.url")).toBe(testUrl);
+  });
+
+  it("removes layoutUrl when set to undefined", () => {
+    const urlWithLayout = new URL(baseURL.href);
+    urlWithLayout.searchParams.set("layoutUrl", "http://example.com/layout.json");
+    const updated = updateAppURLState(urlWithLayout, { layoutUrl: undefined });
+    expect(updated.searchParams.has("layoutUrl")).toBe(false);
   });
 
   describe("url states", () => {

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -10,6 +10,7 @@ import { createContext, useContext } from "react";
 import { AppBarProps } from "@lichtblick/suite-base/components/AppBar";
 import { CustomWindowControlsProps } from "@lichtblick/suite-base/components/AppBar/CustomWindowControls";
 import { IAppConfiguration } from "@lichtblick/suite-base/context/AppConfigurationContext";
+import { AppParametersInput } from "@lichtblick/suite-base/context/AppParametersContext";
 import { INativeAppMenu } from "@lichtblick/suite-base/context/NativeAppMenuContext";
 import { INativeWindow } from "@lichtblick/suite-base/context/NativeWindowContext";
 import { IDataSourceFactory } from "@lichtblick/suite-base/context/PlayerSelectionContext";
@@ -18,6 +19,7 @@ import { IExtensionLoader } from "@lichtblick/suite-base/services/extension/IExt
 interface ISharedRootContext {
   deepLinks: readonly string[];
   appConfiguration?: IAppConfiguration;
+  appParameters?: AppParametersInput;
   dataSources: IDataSourceFactory[];
   extensionLoaders: readonly IExtensionLoader[];
   nativeAppMenu?: INativeAppMenu;

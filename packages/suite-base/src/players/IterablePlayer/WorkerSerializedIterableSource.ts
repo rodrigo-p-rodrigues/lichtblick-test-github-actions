@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -137,10 +137,21 @@ export class WorkerSerializedIterableSource implements ISerializedIterableSource
   }
 
   public async terminate(): Promise<void> {
-    this.#disposeRemote?.();
-    // shouldn't normally have to do this, but if `initialize` is called after again we don't want
-    // to reuse the old remote
-    this.#disposeRemote = undefined;
+    // Capture and clear this call's endpoint immediately: a concurrent initialize() call may
+    // replace #sourceWorkerRemote/#disposeRemote with a newer worker while this terminate() is
+    // still awaiting below, and that newer worker must not be touched or disposed by this call.
+    const remote = this.#sourceWorkerRemote;
+    const disposeRemote = this.#disposeRemote;
     this.#sourceWorkerRemote = undefined;
+    this.#disposeRemote = undefined;
+
+    try {
+      // Give the worker-side source (e.g. MultiIterableSource's pool) a chance to release pooled
+      // readers/streams gracefully before the worker is hard-killed below.
+      await remote?.terminate();
+    } finally {
+      // Always dispose the captured worker, even if its graceful terminate() rejected.
+      disposeRemote?.();
+    }
   }
 }

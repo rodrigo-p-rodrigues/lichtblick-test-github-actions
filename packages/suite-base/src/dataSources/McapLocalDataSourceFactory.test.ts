@@ -1,11 +1,12 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 import { DataSourceFactoryInitializeArgs } from "@lichtblick/suite-base/context/PlayerSelectionContext";
 import { FILE_ACCEPT_TYPE } from "@lichtblick/suite-base/context/Workspace/constants";
 import { IterablePlayer } from "@lichtblick/suite-base/players/IterablePlayer";
 import { WorkerSerializedIterableSource } from "@lichtblick/suite-base/players/IterablePlayer/WorkerSerializedIterableSource";
-import BasicBuilder from "@lichtblick/suite-base/testing/builders/BasicBuilder";
+import { expandVideoSeekBackfill } from "@lichtblick/suite-base/players/IterablePlayer/videoSeekBackfill";
+import { BasicBuilder } from "@lichtblick/test-builders";
 
 import McapLocalDataSourceFactory from "./McapLocalDataSourceFactory";
 
@@ -67,6 +68,7 @@ describe("McapLocalDataSourceFactory", () => {
       name: files[0]!.name,
       sourceId: MCAP_LOCAL_FILE_ID,
       readAheadDuration: { sec: 120, nsec: 0 },
+      expandBackfill: expandVideoSeekBackfill,
     });
     expect(player).toBeInstanceOf(IterablePlayer);
   });
@@ -87,8 +89,31 @@ describe("McapLocalDataSourceFactory", () => {
       name: `${files[0]!.name}, ${files[1]!.name}`,
       sourceId: MCAP_LOCAL_FILE_ID,
       readAheadDuration: { sec: 120, nsec: 0 },
+      expandBackfill: expandVideoSeekBackfill,
     });
     expect(player).toBeInstanceOf(IterablePlayer);
+  });
+
+  it("should pass configured hydration overrides into initArgs", () => {
+    const files = [buildMcapFile(), buildMcapFile()];
+    const { args } = setup({ files });
+    factory = new McapLocalDataSourceFactory({
+      maxHydratedSources: 3,
+      maxHydratedBytes: 1234,
+      initConcurrency: 2,
+    });
+
+    factory.initialize(args);
+
+    expect(WorkerSerializedIterableSource).toHaveBeenCalledWith({
+      initWorker: expect.any(Function),
+      initArgs: {
+        files,
+        maxHydratedSources: 3,
+        maxHydratedBytes: 1234,
+        initConcurrency: 2,
+      },
+    });
   });
 
   it("should return undefined when no files are provided", () => {
@@ -117,6 +142,7 @@ describe("McapLocalDataSourceFactory", () => {
       name: file.name,
       sourceId: MCAP_LOCAL_FILE_ID,
       readAheadDuration: { sec: 120, nsec: 0 },
+      expandBackfill: expandVideoSeekBackfill,
     });
     expect(player).toBeInstanceOf(IterablePlayer);
   });
@@ -130,7 +156,7 @@ describe("McapLocalDataSourceFactory", () => {
 
     expect(WorkerSerializedIterableSource).toHaveBeenCalledWith({
       initWorker: expect.any(Function),
-      initArgs: { files: [file, files[0]] },
+      initArgs: { files: [files[0], file] },
     });
     expect(IterablePlayer).toHaveBeenCalledWith({
       metricsCollector: args.metricsCollector,
@@ -138,6 +164,7 @@ describe("McapLocalDataSourceFactory", () => {
       name: `${files[0]?.name}, ${file.name}`,
       sourceId: MCAP_LOCAL_FILE_ID,
       readAheadDuration: { sec: 120, nsec: 0 },
+      expandBackfill: expandVideoSeekBackfill,
     });
     expect(player).toBeInstanceOf(IterablePlayer);
   });

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -14,6 +14,11 @@ import {
 } from "@lichtblick/suite-base/context/PlayerSelectionContext";
 import { IterablePlayer } from "@lichtblick/suite-base/players/IterablePlayer";
 import { WorkerSerializedIterableSource } from "@lichtblick/suite-base/players/IterablePlayer/WorkerSerializedIterableSource";
+import {
+  MultiFileHydrationOverrides,
+  addMultiFileHydrationOverrides,
+} from "@lichtblick/suite-base/players/IterablePlayer/shared/multiFileHydrationOptions";
+import { expandVideoSeekBackfill } from "@lichtblick/suite-base/players/IterablePlayer/videoSeekBackfill";
 import { Player } from "@lichtblick/suite-base/players/types";
 
 const initWorkers: Record<string, () => Worker> = {
@@ -42,14 +47,9 @@ const fileTypesAllowed: AllowedFileExtensions[] = [
   AllowedFileExtensions.MCAP,
 ];
 
-export function checkExtensionMatch(fileExtension: string, previousExtension?: string): string {
-  if (previousExtension != undefined && previousExtension !== fileExtension) {
-    throw new Error("All sources need to be from the same type");
-  }
-  return fileExtension;
-}
-
 class RemoteDataSourceFactory implements IDataSourceFactory {
+  private readonly multiFileHydrationOverrides?: MultiFileHydrationOverrides;
+
   public id = "remote-file";
 
   // The remote file feature use to be handled by two separate factories with these IDs.
@@ -66,11 +66,11 @@ class RemoteDataSourceFactory implements IDataSourceFactory {
   public docsLinks = [
     {
       label: "ROS 1",
-      url: "https://lichtblick-suite.github.io/docs/connecting-to-data/ros1.html",
+      url: "https://lichtblick-suite.github.io/docs/docs/connecting-to-data/frameworks/ros1/",
     },
     {
       label: "MCAP",
-      url: "https://lichtblick-suite.github.io/docs/connecting-to-data/mcap.html",
+      url: "https://lichtblick-suite.github.io/docs/docs/connecting-to-data/frameworks/mcap/",
     },
   ];
 
@@ -89,6 +89,12 @@ class RemoteDataSourceFactory implements IDataSourceFactory {
 
   public warning = "Loading large files over HTTP can be slow";
 
+  // Optional pass-through for future multi-file hydration tuning experiments. Omitted by default
+  // so existing behavior remains unchanged until a caller explicitly opts in.
+  public constructor(multiFileHydrationOverrides?: MultiFileHydrationOverrides) {
+    this.multiFileHydrationOverrides = multiFileHydrationOverrides;
+  }
+
   public initialize(args: DataSourceFactoryInitializeArgs): Player | undefined {
     if (args.params?.url == undefined) {
       return;
@@ -100,12 +106,16 @@ class RemoteDataSourceFactory implements IDataSourceFactory {
 
     urls.forEach((url) => {
       extension = path.extname(new URL(url).pathname);
-      nextExtension = checkExtensionMatch(extension, nextExtension);
+      nextExtension = this.checkExtensionMatch(extension, nextExtension);
     });
 
     const initWorker = initWorkers[extension]!;
 
-    const source = new WorkerSerializedIterableSource({ initWorker, initArgs: { urls } });
+    const initArgs =
+      urls.length === 1
+        ? { url: urls[0] }
+        : addMultiFileHydrationOverrides({ urls }, this.multiFileHydrationOverrides);
+    const source = new WorkerSerializedIterableSource({ initWorker, initArgs });
 
     return new IterablePlayer({
       source,
@@ -114,7 +124,18 @@ class RemoteDataSourceFactory implements IDataSourceFactory {
       urlParams: { urls },
       sourceId: this.id,
       readAheadDuration: { sec: 10, nsec: 0 },
+      // MCAP can carry foxglove.CompressedVideo. Some codecs (e.g. H.265) cannot decode a P/B-frame
+      // in isolation, so on a backward seek the backfill is expanded to include the preceding GOP.
+      // A no-op for non-video (e.g. .bag) sources.
+      expandBackfill: expandVideoSeekBackfill,
     });
+  }
+
+  private checkExtensionMatch(fileExtension: string, previousExtension?: string): string {
+    if (previousExtension != undefined && previousExtension !== fileExtension) {
+      throw new Error("All sources need to be from the same type");
+    }
+    return fileExtension;
   }
 
   #validateUrl(newValue: string): Error | undefined {

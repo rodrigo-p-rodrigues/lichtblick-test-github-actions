@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 import * as _ from "lodash-es";
@@ -66,10 +66,15 @@ export function useLayoutNavigation(menuClose?: () => void): UseLayoutNavigation
       { selectedViaClick = false, event }: { selectedViaClick?: boolean; event?: MouseEvent } = {},
     ) => {
       if (selectedViaClick) {
-        void analytics.logEvent(AppEvent.LAYOUT_SELECT, { permission: item.permission });
+        analytics.logEvent(AppEvent.LAYOUT_SELECT, { permission: item.permission });
       }
       if (event?.ctrlKey === true || event?.metaKey === true || event?.shiftKey === true) {
         if (item.id !== currentLayoutId) {
+          // selectedIds is empty on intial render
+          // this adds the current layout to selection
+          if (state.selectedIds.length === 0 && currentLayoutId != undefined) {
+            dispatch({ type: "select-id", id: currentLayoutId });
+          }
           dispatch({
             type: "select-id",
             id: item.id,
@@ -84,7 +89,15 @@ export function useLayoutNavigation(menuClose?: () => void): UseLayoutNavigation
         menuClose?.();
       }
     },
-    [analytics, currentLayoutId, dispatch, layouts.value, menuClose, setSelectedLayoutId],
+    [
+      analytics,
+      currentLayoutId,
+      dispatch,
+      layouts.value,
+      menuClose,
+      setSelectedLayoutId,
+      state.selectedIds.length,
+    ],
   );
 
   return { onSelectLayout, state, dispatch };

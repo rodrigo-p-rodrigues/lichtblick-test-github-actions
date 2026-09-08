@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -226,6 +226,7 @@ export function PlotLegendRow({
           flex="auto"
           variant="body2"
           className={cx({ [classes.disabledPathLabel]: !path.enabled })}
+          data-testid="plot-legend-row-path-label"
         >
           {isAddSeriesRow ? t("clickToAddASeries") : plotPathDisplayName(path, index)}
         </Typography>
@@ -251,11 +252,21 @@ export function PlotLegendRow({
       )}
       <div className={classes.actionButton}>
         {index === paths.length ? (
-          <ButtonBase title="Add series" aria-label="Add series" onClick={onClickPath}>
+          <ButtonBase
+            title="Add series"
+            aria-label="Add series"
+            onClick={onClickPath}
+            data-testid="add-series"
+          >
             <Add12Regular />
           </ButtonBase>
         ) : (
-          <ButtonBase title="Delete series" aria-label="Delete series" onClick={handleDeletePath}>
+          <ButtonBase
+            title="Delete series"
+            aria-label="Delete series"
+            onClick={handleDeletePath}
+            data-testid="delete-series"
+          >
             <Dismiss12Regular />
           </ButtonBase>
         )}

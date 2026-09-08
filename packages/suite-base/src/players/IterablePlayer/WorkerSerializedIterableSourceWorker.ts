@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -61,6 +61,10 @@ export class WorkerSerializedIterableSourceWorker implements ISerializedIterable
     const iter = this.#source.messageIterator(args);
     const cursor = new ComlinkTransferIteratorCursor(new IteratorCursor<Uint8Array>(iter, abort));
     return Comlink.proxy(cursor);
+  }
+
+  public async terminate(): Promise<void> {
+    await this.#source.terminate?.();
   }
 }
 

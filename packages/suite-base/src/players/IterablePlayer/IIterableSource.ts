@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -107,17 +107,9 @@ export type GetBackfillMessagesArgs = {
   abortSignal?: AbortSignal;
 };
 
-// IMessageCursor describes an interface for message cursors. Message cursors are a similar concept
-// to javascript generators but provide a method for reading a batch of messages rather than one
-// message.
-//
-// Motivation: When using webworkers, read calls are invoked via an RPC interface. For large
-// datasets (many hundred thousand) messages, preloading the data (i.e. to plot a signal) would
-// result in several hundred thousand RPC calls. The overhead of making these calls add up and
-// negatively impact the preloading experience.
-//
-// Providing an interface which allows callers to read a batch of messages significantly (4x speedup
-// on an 700k message dataset on M1 Pro) reduces the RPC call overhead.
+// IMessageCursor is similar to a JavaScript generator, but it can return message batches.
+// For worker/RPC-backed sources this avoids one round-trip per message when preloading large
+// datasets and substantially reduces overhead.
 export interface IMessageCursor<MessageType = unknown> {
   /**
    * Read the next message from the cursor. Return a result or undefined if the cursor is done
@@ -168,13 +160,9 @@ export interface IIterableSource<MessageType = unknown> {
    * The iterator produces IteratorResults from the source. The IteratorResults should be in log
    * time order.
    *
-   * Returning an AsyncIterator rather than AsyncIterable communicates that the returned iterator
-   * cannot be used directly in a `for-await-of` loop. This forces the IterablePlayer implementation
-   * to use the `.next()` API, rather than `for-await-of` which would implicitly call the iterator's
-   * `return()` method when breaking out of the loop and prevent the iterator from being used in
-   * more than one loop. This means the IIterableSource implementations can use a simple async
-   * generator function, and a `finally` block to do any necessary cleanup tasks when the request
-   * finishes or is canceled.
+   * Returning an AsyncIterator rather than something intended for `for-await-of` forces callers to
+   * use `.next()`. That avoids implicit `return()` calls when a loop exits, so implementations can
+   * rely on generator `finally` cleanup only when the request actually finishes or is canceled.
    */
   messageIterator(
     args: Immutable<MessageIteratorArgs>,
@@ -201,11 +189,20 @@ export interface IIterableSource<MessageType = unknown> {
 
   getStart?: () => Time | undefined;
 
+  getEnd?: () => Time | undefined;
+
   /**
    * Optional method a data source can implement to cleanup resources. The player will call this
    * method when the source will no longer be used.
    */
   terminate?: () => Promise<void>;
+
+  /**
+   * Optional method a data source can implement to warm itself up before it becomes the active
+   * source (e.g. hydrate a pooled reader ahead of playback reaching it). Failures should be
+   * treated as non-fatal by callers; the source can still hydrate on demand later.
+   */
+  prewarm?: () => Promise<void>;
 }
 
 export type IterableSourceInitializeArgs = {
@@ -213,6 +210,12 @@ export type IterableSourceInitializeArgs = {
   url?: string;
   files?: File[];
   urls?: string[];
+  // Optional overrides for multi-file hydration tuning (see MultiSourceHydrationOptions in
+  // players/IterablePlayer/shared/types.ts). Only meaningful when `files`/`urls` has more than
+  // one entry. When omitted, MultiIterableSource's internal defaults apply.
+  maxHydratedSources?: number;
+  maxHydratedBytes?: number;
+  initConcurrency?: number;
   params?: Record<string, string | undefined>;
 
   api?: {

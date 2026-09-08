@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -7,16 +7,19 @@
 
 import * as _ from "lodash-es";
 
-import { Time, fromRFC3339String, toRFC3339String } from "@lichtblick/rostime";
+import { Time, toRFC3339String } from "@lichtblick/rostime";
 import { LayoutID } from "@lichtblick/suite-base/context/CurrentLayoutContext";
+import { parseTimeUrlString } from "@lichtblick/suite-base/util/time";
 
 import { keyMap } from "./constants";
 
 export type AppURLState = {
   ds?: string;
+  layoutUrl?: string;
   dsParams?: Record<string, string>;
   dsParamsArray?: Record<string, string[]>;
   layoutId?: LayoutID;
+  mcapBundleId?: string;
   time?: Time;
 };
 
@@ -43,6 +46,14 @@ export function updateAppURLState(url: URL, urlState: AppURLState): URL {
       newURL.searchParams.set("ds", urlState.ds);
     } else {
       newURL.searchParams.delete("ds");
+    }
+  }
+
+  if ("layoutUrl" in urlState) {
+    if (urlState.layoutUrl) {
+      newURL.searchParams.set("layoutUrl", urlState.layoutUrl);
+    } else {
+      newURL.searchParams.delete("layoutUrl");
     }
   }
 
@@ -77,8 +88,10 @@ export function updateAppURLState(url: URL, urlState: AppURLState): URL {
  */
 export function parseAppURLState(url: URL): AppURLState | undefined {
   const ds = url.searchParams.get("ds") ?? undefined;
+  const layoutUrl = url.searchParams.get("layoutUrl");
+  const mcapBundleId = url.searchParams.get("mcap-bundle") ?? undefined;
   const timeString = url.searchParams.get("time");
-  const time = timeString == undefined ? undefined : fromRFC3339String(timeString);
+  const time = parseTimeUrlString(timeString ?? undefined);
   const dsParams: Record<string, string> = {};
   url.searchParams.forEach((v, k) => {
     if (k && v && k.startsWith("ds.")) {
@@ -86,7 +99,7 @@ export function parseAppURLState(url: URL): AppURLState | undefined {
       if (dsParams[cleanKey] == undefined) {
         dsParams[cleanKey] = v;
       } else if (cleanKey === "url") {
-        dsParams[cleanKey] = dsParams[cleanKey]! + "," + v;
+        dsParams[cleanKey] = dsParams[cleanKey] + "," + v;
       } else {
         dsParams[cleanKey] = v;
       }
@@ -97,6 +110,8 @@ export function parseAppURLState(url: URL): AppURLState | undefined {
     {
       time,
       ds,
+      layoutUrl,
+      mcapBundleId,
       dsParams: _.isEmpty(dsParams) ? undefined : dsParams,
     },
     _.isEmpty,

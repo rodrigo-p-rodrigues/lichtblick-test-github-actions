@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -38,7 +38,7 @@ import NativeAppMenuContext, { INativeAppMenu } from "./context/NativeAppMenuCon
 import NativeWindowContext, { INativeWindow } from "./context/NativeWindowContext";
 import { IDataSourceFactory } from "./context/PlayerSelectionContext";
 import CurrentLayoutProvider from "./providers/CurrentLayoutProvider";
-import ExtensionCatalogProvider from "./providers/ExtensionCatalogProvider";
+import ExtensionCatalogProvider from "./providers/ExtensionCatalogProvider/ExtensionCatalogProvider";
 import ExtensionMarketplaceProvider from "./providers/ExtensionMarketplaceProvider";
 import PanelCatalogProvider from "./providers/PanelCatalogProvider";
 import { LaunchPreference } from "./screens/LaunchPreference";
@@ -73,7 +73,7 @@ function contextMenuHandler(event: MouseEvent) {
 export function App(props: AppProps): React.JSX.Element {
   const {
     appConfiguration,
-    appParameters = {},
+    appParameters,
     dataSources,
     extensionLoaders,
     layoutLoaders,

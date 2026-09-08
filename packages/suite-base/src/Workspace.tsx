@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -15,14 +15,16 @@
 
 import { Link, Typography } from "@mui/material";
 import { t } from "i18next";
+import { useSnackbar } from "notistack";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import Logger from "@lichtblick/log";
 import { AppSetting } from "@lichtblick/suite-base/AppSetting";
 import { useStyles } from "@lichtblick/suite-base/Workspace.style";
+import McapBundleAPI from "@lichtblick/suite-base/api/mcapBundle/McapBundleAPI";
 import AccountSettings from "@lichtblick/suite-base/components/AccountSettingsSidebar/AccountSettings";
-import { AlertsList } from "@lichtblick/suite-base/components/AlertsList";
+import { AlertsList } from "@lichtblick/suite-base/components/AlertList/AlertsList";
 import { AppBar } from "@lichtblick/suite-base/components/AppBar";
 import {
   DataSourceDialog,
@@ -67,6 +69,7 @@ import {
   useCurrentUserType,
 } from "@lichtblick/suite-base/context/CurrentUserContext";
 import { EventsStore, useEvents } from "@lichtblick/suite-base/context/EventsContext";
+import { useLayoutManager } from "@lichtblick/suite-base/context/LayoutManagerContext";
 import { usePlayerSelection } from "@lichtblick/suite-base/context/PlayerSelectionContext";
 import {
   LeftSidebarItemKey,
@@ -78,9 +81,11 @@ import {
 } from "@lichtblick/suite-base/context/Workspace/WorkspaceContext";
 import { useAppConfigurationValue } from "@lichtblick/suite-base/hooks";
 import useAddPanel from "@lichtblick/suite-base/hooks/useAddPanel";
+import useAlertCount from "@lichtblick/suite-base/hooks/useAlertCount";
 import { useDefaultWebLaunchPreference } from "@lichtblick/suite-base/hooks/useDefaultWebLaunchPreference";
 import useElectronFilesToOpen from "@lichtblick/suite-base/hooks/useElectronFilesToOpen";
 import { useHandleFiles } from "@lichtblick/suite-base/hooks/useHandleFiles";
+import { useLayoutTransfer } from "@lichtblick/suite-base/hooks/useLayoutTransfer";
 import useSeekTimeFromCLI from "@lichtblick/suite-base/hooks/useSeekTimeFromCLI";
 import { useStructureItemsStoreManager } from "@lichtblick/suite-base/panels/Plot/hooks/useStructureItemsStoreManager";
 import { PlayerPresence } from "@lichtblick/suite-base/players/types";
@@ -93,6 +98,7 @@ import useBroadcast from "@lichtblick/suite-base/util/broadcast/useBroadcast";
 import isDesktopApp from "@lichtblick/suite-base/util/isDesktopApp";
 
 import { useWorkspaceActions } from "./context/Workspace/useWorkspaceActions";
+import { severityToBadgeColor } from "./utils";
 
 const log = Logger.getLogger(__filename);
 
@@ -111,7 +117,6 @@ function isInjectedSidebarItem(
 const selectPlayerPresence = ({ playerState }: MessagePipelineContext) => playerState.presence;
 const selectPlayerIsPresent = ({ playerState }: MessagePipelineContext) =>
   playerState.presence !== PlayerPresence.NOT_PRESENT;
-const selectPlayerAlerts = ({ playerState }: MessagePipelineContext) => playerState.alerts;
 const selectIsPlaying = (ctx: MessagePipelineContext) =>
   ctx.playerState.activeData?.isPlaying === true;
 const selectPause = (ctx: MessagePipelineContext) => ctx.pausePlayback;
@@ -136,7 +141,7 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(ReactNull);
   const { availableSources, selectSource } = usePlayerSelection();
   const playerPresence = useMessagePipeline(selectPlayerPresence);
-  const playerAlerts = useMessagePipeline(selectPlayerAlerts);
+  const { alertCount, highestSeverity } = useAlertCount();
 
   const dataSourceDialog = useWorkspaceStore(selectWorkspaceDataSourceDialog);
   const leftSidebarItem = useWorkspaceStore(selectWorkspaceLeftSidebarItem);
@@ -158,6 +163,10 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
     [getMessagePipeline],
   );
 
+  const layoutManager = useLayoutManager();
+  const { parseAndInstallLayout } = useLayoutTransfer();
+
+  const { enqueueSnackbar } = useSnackbar();
   const { dialogActions, sidebarActions } = useWorkspaceActions();
   const { handleFiles } = useHandleFiles({
     availableSources,
@@ -296,7 +305,9 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
           title: "Data source",
           component: DataSourceSidebarItem,
           badge:
-            playerAlerts && playerAlerts.length > 0 ? { count: playerAlerts.length } : undefined,
+            alertCount > 0
+              ? { count: alertCount, color: severityToBadgeColor(highestSeverity) }
+              : undefined,
         },
       ],
     ]);
@@ -364,7 +375,8 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
     return [topItems, bottomItems];
   }, [
     DataSourceSidebarItem,
-    playerAlerts,
+    alertCount,
+    highestSeverity,
     enableNewTopNav,
     enableStudioLogsSidebar,
     AppContextLayoutBrowser,
@@ -386,18 +398,15 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
           title: "Alerts",
           component: AlertsList,
           badge:
-            playerAlerts && playerAlerts.length > 0
-              ? {
-                  count: playerAlerts.length,
-                  color: "error",
-                }
+            alertCount > 0
+              ? { count: alertCount, color: severityToBadgeColor(highestSeverity) }
               : undefined,
         },
       ],
       ["layouts", { title: "Layouts", component: LayoutBrowser }],
     ]);
     return items;
-  }, [PanelSettingsSidebar, playerAlerts]);
+  }, [PanelSettingsSidebar, alertCount, highestSeverity]);
 
   const rightSidebarItems = useMemo(() => {
     const items = new Map<RightSidebarItemKey, SidebarItem>([
@@ -495,16 +504,132 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
     return deepLinks[0] ? parseAppURLState(new URL(deepLinks[0])) : undefined;
   }, [props.deepLinks]);
 
-  const [unappliedSourceArgs, setUnappliedSourceArgs] = useState(
-    targetUrlState ? { ds: targetUrlState.ds, dsParams: targetUrlState.dsParams } : undefined,
+  const [unappliedSourceArgs, setUnappliedSourceArgs] = useState<
+    | {
+        ds: string | undefined;
+        dsParams: Record<string, string> | undefined;
+        sourceMetadata?: Record<string, unknown>[];
+        layoutUrl?: string;
+      }
+    | undefined
+  >(
+    targetUrlState && !targetUrlState.mcapBundleId
+      ? {
+          ds: targetUrlState.ds,
+          dsParams: targetUrlState.dsParams,
+          layoutUrl: targetUrlState.layoutUrl,
+        }
+      : undefined,
   );
 
+  // Resolve MCAP bundle URLs when mcapBundleId is present.
+  useEffect(() => {
+    const mcapBundleId = targetUrlState?.mcapBundleId;
+    if (!mcapBundleId) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    void (async () => {
+      try {
+        const mcaps = await McapBundleAPI.getMcapBundle(mcapBundleId, signal);
+        if (mcaps.length === 0) {
+          enqueueSnackbar("Session contains no data sources", { variant: "error" });
+          return;
+        }
+
+        const urls = mcaps.map((mcap) => mcap.url);
+        setUnappliedSourceArgs({
+          ds: "remote-file",
+          dsParams: { url: urls.join(",") },
+          sourceMetadata: mcaps.map((mcap) => mcap.metadata),
+        });
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+        log.error("Failed to fetch session MCAP URLs:", error);
+        enqueueSnackbar("Failed to load session data sources", { variant: "error" });
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [targetUrlState?.mcapBundleId, enqueueSnackbar]);
+
   const selectEvent = useEvents(selectSelectEvent);
+
+  const fetchLayoutFromUrl = useCallback(
+    async (layoutUrl: string) => {
+      if (layoutUrl === "") {
+        return;
+      }
+
+      // Validate URL protocol - only http/https are allowed for security
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(layoutUrl);
+      } catch {
+        enqueueSnackbar("Invalid layout URL", { variant: "error" });
+        return;
+      }
+
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        enqueueSnackbar("Layout URL must use http or https protocol", { variant: "error" });
+        return;
+      }
+
+      // Use origin+pathname for logging/naming to avoid leaking credentials from query params
+      const safeUrlLabel = `${parsedUrl.origin}${parsedUrl.pathname}`;
+
+      try {
+        const response = await fetch(layoutUrl);
+        if (!response.ok) {
+          log.error(`Failed to fetch layout: ${safeUrlLabel} (status ${response.status})`);
+          enqueueSnackbar(`Failed to load layout (HTTP ${response.status})`, { variant: "error" });
+          return;
+        }
+
+        // Derive filename from sanitized pathname (no credentials in name)
+        const rawFilename = parsedUrl.pathname.split("/").pop();
+        const filename =
+          rawFilename != undefined && rawFilename !== "" ? rawFilename : "layout.json";
+        const dotIndex = filename.lastIndexOf(".");
+        const layoutName = dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
+
+        // Find existing layouts with the same name before saving (safe deduplication)
+        const existingLayouts = await layoutManager.getLayouts();
+        const matchingLayouts = existingLayouts.filter((layout) => layout.name === layoutName);
+
+        // Delegate JSON parsing, saving, and selection to parseAndInstallLayout
+        const text = await response.text();
+        const file = new File([text], filename, { type: "application/json" });
+        const newLayout = await parseAndInstallLayout(file, "local");
+
+        // Only delete old layouts after successful save to avoid data loss
+        if (newLayout) {
+          for (const layout of matchingLayouts) {
+            await layoutManager.deleteLayout({ id: layout.id });
+          }
+        }
+      } catch (error) {
+        log.error(`Could not load layout from ${safeUrlLabel}`, error);
+        enqueueSnackbar("Failed to load layout from URL", { variant: "error" });
+      }
+    },
+    [layoutManager, parseAndInstallLayout, enqueueSnackbar],
+  );
+
   // Load data source from URL.
   useEffect(() => {
     if (!unappliedSourceArgs) {
       return;
     }
+
+    let shouldUpdate = false;
 
     // Apply any available data source args
     if (unappliedSourceArgs.ds) {
@@ -512,11 +637,22 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
       selectSource(unappliedSourceArgs.ds, {
         type: "connection",
         params: unappliedSourceArgs.dsParams,
+        sourceMetadata: unappliedSourceArgs.sourceMetadata,
       });
       selectEvent(unappliedSourceArgs.dsParams?.eventId);
-      setUnappliedSourceArgs({ ds: undefined, dsParams: undefined });
+      shouldUpdate = true;
     }
-  }, [selectEvent, selectSource, unappliedSourceArgs, setUnappliedSourceArgs]);
+    // Apply any available layout URL
+    if (unappliedSourceArgs.layoutUrl) {
+      fetchLayoutFromUrl(unappliedSourceArgs.layoutUrl).catch((error: unknown) => {
+        log.error("Failed to fetch layout from URL", error);
+      });
+      shouldUpdate = true;
+    }
+    if (shouldUpdate) {
+      setUnappliedSourceArgs({ ds: undefined, dsParams: undefined, layoutUrl: undefined });
+    }
+  }, [fetchLayoutFromUrl, selectEvent, selectSource, unappliedSourceArgs, setUnappliedSourceArgs]);
 
   const [unappliedTime, setUnappliedTime] = useState(
     targetUrlState ? { time: targetUrlState.time } : undefined,
@@ -600,13 +736,13 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
         >
           {/* To ensure no stale player state remains, we unmount all panels when players change */}
           <RemountOnValueChange value={playerId}>
-            <Stack>
+            <Stack data-testid="workspace-panels">
               <PanelLayout />
             </Stack>
           </RemountOnValueChange>
         </Sidebars>
         {play && pause && seek && (
-          <div style={{ flexShrink: 0 }}>
+          <div style={{ flexShrink: 0 }} data-testid="playback-controls">
             <PlaybackControls
               play={play}
               pause={pause}

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -7,12 +7,13 @@
 
 import * as _ from "lodash-es";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLatest } from "react-use";
 import { DeepPartial } from "ts-essentials";
 import { useDebouncedCallback } from "use-debounce";
 
 import Logger from "@lichtblick/log";
-import { Time, toNanoSec } from "@lichtblick/rostime";
+import { Time, toNanoSec, compare } from "@lichtblick/rostime";
 import {
   Immutable,
   LayoutActions,
@@ -27,7 +28,19 @@ import {
 import { AppSetting } from "@lichtblick/suite-base/AppSetting";
 import { useAnalytics } from "@lichtblick/suite-base/context/AnalyticsContext";
 import { DEFAULT_SCENE_EXTENSION_CONFIG } from "@lichtblick/suite-base/panels/ThreeDeeRender/SceneExtensionConfig";
-import { PANEL_STYLE } from "@lichtblick/suite-base/panels/ThreeDeeRender/constants";
+import {
+  DEFAULT_FOLLOW_MODE,
+  PANEL_STYLE,
+  MAX_TRANSFORM_MESSAGES,
+} from "@lichtblick/suite-base/panels/ThreeDeeRender/constants";
+import {
+  FRAME_TRANSFORM_DATATYPES,
+  FRAME_TRANSFORMS_DATATYPES,
+} from "@lichtblick/suite-base/panels/ThreeDeeRender/foxglove";
+import {
+  TF_DATATYPES,
+  TRANSFORM_STAMPED_DATATYPES,
+} from "@lichtblick/suite-base/panels/ThreeDeeRender/ros";
 import ThemeProvider from "@lichtblick/suite-base/theme/ThemeProvider";
 
 import type { IRenderer, ImageModeConfig, RendererConfig, RendererSubscription } from "./IRenderer";
@@ -37,6 +50,7 @@ import { SELECTED_ID_VARIABLE } from "./Renderable";
 import { Renderer } from "./Renderer";
 import { RendererContext, useRendererEvent, useRendererProperty } from "./RendererContext";
 import { RendererOverlay } from "./RendererOverlay";
+import { useStyles } from "./ThreeDeeRender.style";
 import { CameraState, DEFAULT_CAMERA_STATE } from "./camera";
 import {
   PublishRos1Datatypes,
@@ -49,6 +63,17 @@ import type { LayerSettingsTransform } from "./renderables/FrameAxes";
 import { PublishClickEventMap } from "./renderables/PublishClickTool";
 import { DEFAULT_PUBLISH_SETTINGS } from "./renderables/PublishSettings";
 import { Shared3DPanelState, ThreeDeeRenderProps } from "./types";
+
+/**
+ * Schemas that carry coordinate frame transforms. Topics with one of these schemas generally
+ * require preloading so that transforms are available across the whole playback range.
+ */
+const TRANSFORM_TOPIC_SCHEMAS = new Set<string>([
+  ...FRAME_TRANSFORM_DATATYPES,
+  ...FRAME_TRANSFORMS_DATATYPES,
+  ...TF_DATATYPES,
+  ...TRANSFORM_STAMPED_DATATYPES,
+]);
 
 const log = Logger.getLogger(__filename);
 
@@ -70,8 +95,11 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     saveState,
     unstable_fetchAsset: fetchAsset,
     unstable_setMessagePathDropConfig: setMessagePathDropConfig,
+    unstable_setAlert: setPanelAlert,
   } = context;
   const analytics = useAnalytics();
+  const { classes } = useStyles();
+  const { t } = useTranslation("threeDee");
 
   // Load and save the persisted panel configuration
   const [config, setConfig] = useState<Immutable<RendererConfig>>(() => {
@@ -91,7 +119,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
 
     return {
       cameraState,
-      followMode: partialConfig?.followMode ?? "follow-pose",
+      followMode: partialConfig?.followMode ?? DEFAULT_FOLLOW_MODE,
       followTf: partialConfig?.followTf,
       scene: partialConfig?.scene ?? {},
       transforms,
@@ -189,8 +217,15 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
   const [didSeek, setDidSeek] = useState<boolean>(false);
   const [sharedPanelState, setSharedPanelState] = useState<undefined | Shared3DPanelState>();
   const [allFrames, setAllFrames] = useState<readonly MessageEvent[] | undefined>(undefined);
+  const [isLoadingTransforms, setIsLoadingTransforms] = useState<boolean>(false);
+  const [loadedTransformCount, setLoadedTransformCount] = useState<number>(0);
+  const [reloadPreloadTrigger, setReloadPreloadTrigger] = useState<number>(0);
 
   const renderRef = useRef({ needsRender: false });
+  // Marks that the frame currently being processed resulted from a seek. On such frames the panel
+  // defers the frame barrier (`renderDone`) until any in-flight video decode has settled, so the
+  // player parks the cursor on the seek target until the frame is actually rendered.
+  const seekFrameRef = useRef(false);
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
 
   const schemaSubscriptions = useRendererProperty(
@@ -279,6 +314,16 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
   );
   useRendererEvent("selectedRenderable", updateSelectedRenderable, renderer);
 
+  // Clear preloaded buffer when action button is clicked
+  const handleClearPreloadBuffer = useCallback(() => {
+    setAllFrames([]);
+    setLoadedTransformCount(0);
+    setIsLoadingTransforms(false);
+    // Trigger reload by incrementing the trigger
+    setReloadPreloadTrigger((prev) => prev + 1);
+  }, []);
+  useRendererEvent("clearPreloadBuffer", handleClearPreloadBuffer, renderer);
+
   // Log LayerErrors to PanelLogs
   const handleLayerErrorUpdate = useCallback(
     (path: Path, _errorId: string, errorMessage: string) => {
@@ -338,6 +383,25 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     }
   }, [topics, renderer]);
 
+  const hasTransformTopics = useMemo(
+    () => topics?.some((topic) => TRANSFORM_TOPIC_SCHEMAS.has(topic.schemaName)) ?? false,
+    [topics],
+  );
+  const isPreloadingEnabled = config.scene.transforms?.enablePreloading === true;
+  useEffect(() => {
+    // Surface an informational alert whenever there's a transform topic
+    setPanelAlert?.(
+      "transform-preload",
+      hasTransformTopics && !isPreloadingEnabled
+        ? {
+            severity: "info",
+            message: t("transformPreloadAlert"),
+            tip: t("transformPreloadAlertTip"),
+          }
+        : undefined,
+    );
+  }, [hasTransformTopics, isPreloadingEnabled, setPanelAlert, t]);
+
   // Tell the renderer if we are connected to a ROS data source
   useEffect(() => {
     if (renderer) {
@@ -365,6 +429,135 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     }
   }, [interfaceMode, context, config.imageMode.imageTopic]);
 
+  // Build a list of topics to subscribe to
+  const [topicsToSubscribe, setTopicsToSubscribe] = useState<Subscription[] | undefined>(undefined);
+
+  const prevFilteredTopics = useRef<Subscription[]>([]);
+
+  // Only update when the list of topics to preload changes
+  // Reduce amount of calls to useLayoutEffect below
+  const transformTopicsToPreload = useMemo(() => {
+    if (!topicsToSubscribe) {
+      return [];
+    }
+
+    const filteredTopics = topicsToSubscribe.filter((sub) => sub.preload === true);
+
+    // Manual comparison for better performance than lodash.isEqual
+    const areTopicsEqual = (current: Subscription[], filtered: Subscription[]): boolean => {
+      if (current.length !== filtered.length) {
+        return false;
+      }
+      for (let i = 0; i < current.length; i++) {
+        const currentSub = current[i];
+        const filteredSub = filtered[i];
+        if (!currentSub || !filteredSub) {
+          continue;
+        }
+        if (currentSub.topic !== filteredSub.topic) {
+          return false;
+        }
+        if (currentSub.convertTo !== filteredSub.convertTo) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    if (areTopicsEqual(prevFilteredTopics.current, filteredTopics)) {
+      return prevFilteredTopics.current;
+    }
+
+    prevFilteredTopics.current = filteredTopics;
+    return filteredTopics;
+  }, [topicsToSubscribe]);
+
+  // Subscribe to eligible and enabled topics for range messages
+  useLayoutEffect(() => {
+    const transformTopics = transformTopicsToPreload;
+    const maxMessages: number =
+      config.scene.transforms?.maxPreloadMessages ?? MAX_TRANSFORM_MESSAGES;
+
+    // Exit if preloading is disabled
+    if (!isPreloadingEnabled || transformTopics.length === 0) {
+      setAllFrames([]);
+      setIsLoadingTransforms(false);
+      setLoadedTransformCount(0);
+      return;
+    }
+
+    setIsLoadingTransforms(true);
+    setLoadedTransformCount(0);
+
+    const messageBuffer: MessageEvent[] = [];
+    const unsubscriptions: (() => void)[] = [];
+    const subscriptionPromises: Promise<void>[] = [];
+
+    // Use ref to avoid closure issues in async loop
+    const lastUpdateTimeRef = { current: 0 };
+    const UPDATE_DEBOUNCE_MS = 50; // Update UI every 50ms during loading
+
+    const updateAllFrames = (options?: { isComplete?: boolean }) => {
+      if (messageBuffer.length === 0) {
+        setIsLoadingTransforms(false);
+        return;
+      }
+
+      // Sort and trim messages
+      messageBuffer.sort((a, b) => compare(a.receiveTime, b.receiveTime));
+      const trimmedMessages =
+        messageBuffer.length > maxMessages ? messageBuffer.slice(0, maxMessages) : messageBuffer;
+
+      setAllFrames([...trimmedMessages]);
+      setLoadedTransformCount(trimmedMessages.length);
+      setIsLoadingTransforms(options?.isComplete !== true);
+    };
+
+    for (const topic of transformTopics) {
+      const promise = new Promise<void>((resolve) => {
+        const unsubscribe = context.unstable_subscribeMessageRange({
+          topic: topic.topic,
+          convertTo: topic.convertTo,
+          onNewRangeIterator: async (batchIterator) => {
+            for await (const batch of batchIterator) {
+              if (batch.length > 0) {
+                messageBuffer.push(...batch);
+
+                // Progressive update: update UI periodically during loading
+                const now = Date.now();
+                if (now - lastUpdateTimeRef.current > UPDATE_DEBOUNCE_MS) {
+                  updateAllFrames();
+                  lastUpdateTimeRef.current = now;
+                }
+              }
+            }
+            resolve();
+          },
+        });
+        unsubscriptions.push(unsubscribe);
+      });
+      subscriptionPromises.push(promise);
+    }
+
+    // Final update after all topics complete
+    void Promise.all(subscriptionPromises).then(() => {
+      updateAllFrames({ isComplete: true });
+    });
+
+    return () => {
+      for (const unsubscribe of unsubscriptions) {
+        unsubscribe();
+      }
+    };
+    // in this case context is static, we're just using it to subscribe
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    config.scene.transforms?.enablePreloading,
+    config.scene.transforms?.maxPreloadMessages,
+    transformTopicsToPreload,
+    reloadPreloadTrigger,
+  ]);
+
   // Establish a connection to the message pipeline with context.watch and context.onRender
   useLayoutEffect(() => {
     context.onRender = (renderState: Immutable<RenderState>, done) => {
@@ -376,6 +569,7 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
       // trigger a state flush in Renderer
       if (renderState.didSeek === true) {
         setDidSeek(true);
+        seekFrameRef.current = true;
       }
 
       // Set the done callback into a state variable to trigger a re-render
@@ -399,12 +593,8 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
 
       // currentFrame has messages on subscribed topics since the last render call
       setCurrentFrameMessages(renderState.currentFrame);
-
-      // allFrames has messages on preloaded topics across all frames (as they are loaded)
-      setAllFrames(renderState.allFrames);
     };
 
-    context.watch("allFrames");
     context.watch("colorScheme");
     context.watch("currentFrame");
     context.watch("currentTime");
@@ -416,8 +606,6 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     context.subscribeAppSettings([AppSetting.TIMEZONE]);
   }, [context, renderer]);
 
-  // Build a list of topics to subscribe to
-  const [topicsToSubscribe, setTopicsToSubscribe] = useState<Subscription[] | undefined>(undefined);
   useEffect(() => {
     if (!topics) {
       setTopicsToSubscribe(undefined);
@@ -442,10 +630,15 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
         }
       }
       if (shouldSubscribe) {
+        const sampling =
+          rendererSubscription.preload === true
+            ? undefined
+            : { mode: "latest-per-render-tick" as const };
         newSubscriptions.push({
           topic: topic.name,
           preload: rendererSubscription.preload,
           convertTo,
+          sampling,
         });
       }
     };
@@ -487,7 +680,9 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     if (!topicsToSubscribe) {
       return;
     }
-    log.debug(`Subscribing to [${topicsToSubscribe.map((t) => JSON.stringify(t)).join(", ")}]`);
+    log.debug(
+      `Subscribing to [${topicsToSubscribe.map((topic) => JSON.stringify(topic)).join(", ")}]`,
+    );
     context.subscribe(topicsToSubscribe);
   }, [context, topicsToSubscribe]);
 
@@ -517,10 +712,10 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
 
     renderer.setCurrentTime(newTimeNs);
     if (didSeek) {
-      renderer.handleSeek(oldTimeNs);
+      renderer.handleSeek(oldTimeNs, allFrames);
       setDidSeek(false);
     }
-  }, [currentTime, renderer, didSeek]);
+  }, [currentTime, renderer, didSeek, allFrames]);
 
   // Keep the renderer colorScheme and backgroundColor up to date
   useEffect(() => {
@@ -604,10 +799,35 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
     }
   });
 
-  // Invoke the done callback once the render is complete
+  // Invoke the done callback once the render is complete. On a seek frame, defer the callback
+  // until any in-flight video decode has settled so the player parks the cursor on the seek target
+  // until the frame is actually painted (matching the "stop, render, then resume" seek behavior),
+  // instead of resuming playback and racing the video forward to catch up. Steady-state frames
+  // invoke the callback immediately, leaving normal playback pacing unchanged.
   useEffect(() => {
-    renderDone?.();
-  }, [renderDone]);
+    const done = renderDone;
+    if (!done) {
+      return;
+    }
+
+    if (!renderer || !seekFrameRef.current) {
+      done();
+      return;
+    }
+    seekFrameRef.current = false;
+
+    let invoke: (() => void) | undefined = done;
+    const callOnce = () => {
+      if (invoke) {
+        invoke();
+        invoke = undefined;
+      }
+    };
+    renderer.settleVideoDecodes().then(callOnce, callOnce);
+    // If a newer frame supersedes this one before the decode settles, release the barrier so the
+    // pipeline is never left waiting on a stale frame.
+    return callOnce;
+  }, [renderDone, renderer]);
 
   // Create a useCallback wrapper for adding a new panel to the layout, used to open the
   // "Raw Messages" panel from the object inspector
@@ -793,6 +1013,15 @@ export function ThreeDeeRender(props: Readonly<ThreeDeeRenderProps>): React.JSX.
             ...((measureActive || publishActive) && { cursor: "crosshair" }),
           }}
         />
+        {isLoadingTransforms && config.scene.enableStats === true && (
+          <div className={classes.loadingTransforms}>
+            Loading transforms: {loadedTransformCount.toLocaleString()}{" "}
+            {loadedTransformCount >=
+            (config.scene.transforms?.maxPreloadMessages ?? MAX_TRANSFORM_MESSAGES)
+              ? `(max ${(config.scene.transforms?.maxPreloadMessages ?? MAX_TRANSFORM_MESSAGES).toLocaleString()})`
+              : "messages"}
+          </div>
+        )}
         <RendererContext.Provider value={renderer}>
           <RendererOverlay
             interfaceMode={interfaceMode}

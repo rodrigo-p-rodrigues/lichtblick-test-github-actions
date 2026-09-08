@@ -1,23 +1,26 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 import { test, expect } from "../../../fixtures/electron";
-import { loadFile } from "../../../fixtures/load-file";
+import { loadFiles } from "../../../fixtures/load-files";
+import { Sidebar } from "../../../page-objects";
 
 /**
  * GIVEN a file with multiple topics is loaded
  * WHEN the user toggles topic visibility
  * THEN the filters "List all", "List visible", and "List invisible" should work as expected
  */
-test("toggle topics visibility", async ({ mainWindow }) => {
+test("toggle topics visibility", { tag: "@regression" }, async ({ mainWindow }) => {
+  const sidebar = new Sidebar(mainWindow);
+
   // Given
   const filename = "demo-shuffled.bag";
-  await loadFile({
+  await loadFiles({
     mainWindow,
-    filename,
+    filenames: filename,
   });
 
   // When
-  await mainWindow.getByTestId("panel-settings-left").click();
+  await sidebar.openPanelSettingsTab();
   await mainWindow.getByText("3D").first().click();
   const visibilityButtons = mainWindow.getByTitle("Toggle visibility");
   await visibilityButtons.first().click();

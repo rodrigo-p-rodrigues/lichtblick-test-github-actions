@@ -1,17 +1,20 @@
 *.log
 *.tsbuildinfo
 .DS_Store
+.eslintcache
 .webpack/
 ci/apt/packages
 dist/
 node_modules/
 storybook-screenshots/
 storybook-static/
+tmp/
 # for jest --coverage
 coverage/
 .env
 
 # E2E tests
+.playwright-mcp/
 e2e/reports
 e2e/tests/reports/desktop/*
 e2e/tests/reports/web/*
@@ -29,3 +32,4 @@ test-results/*
 .sonar_lock
 .scannerwork
 eslint-report.json
+blob-report/*

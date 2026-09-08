@@ -1,7 +1,8 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 import { test, expect } from "../../../fixtures/electron";
-import { loadFile } from "../../../fixtures/load-file";
+import { loadFiles } from "../../../fixtures/load-files";
+import { DataSourceDialog, ExtensionManager } from "../../../page-objects";
 
 /**
  * GIVEN the "turtlesim" extension file is loaded
@@ -10,25 +11,22 @@ import { loadFile } from "../../../fixtures/load-file";
  * WHEN the user confirms the uninstall
  * THEN a toast indicating "Uninstalling..." should appear
  */
-test("should uninstall an extension", async ({ mainWindow }) => {
+test("should uninstall an extension", { tag: "@regression" }, async ({ mainWindow }) => {
+  const dialog = new DataSourceDialog(mainWindow);
+  const extensions = new ExtensionManager(mainWindow);
+
   // Given
   const filename = "lichtblick.suite-extension-turtlesim-0.0.1.foxe";
-  await loadFile({
+  await loadFiles({
     mainWindow,
-    filename,
+    filenames: filename,
   });
-  await mainWindow.getByTestId("DataSourceDialog").getByTestId("CloseIcon").click();
+  await dialog.close();
 
   // When
-  await mainWindow.getByTestId("PersonIcon").click();
-  await mainWindow.getByRole("menuitem", { name: "Extensions" }).click();
-  const searchBar = mainWindow.getByPlaceholder("Search Extensions...");
-  await searchBar.fill("turtlesim");
-  const extensionListItem = mainWindow
-    .locator('[data-testid="extension-list-entry"]')
-    .filter({ hasText: "turtlesim" })
-    .filter({ hasText: "0.0.1" });
-  await extensionListItem.click();
+  await extensions.open();
+  await extensions.search("turtlesim");
+  await extensions.selectExtension("turtlesim", "0.0.1");
   const uninstallButton = mainWindow.getByText("Uninstall");
 
   // Then

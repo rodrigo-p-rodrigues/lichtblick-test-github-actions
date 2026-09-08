@@ -1,8 +1,9 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 import { test, expect } from "../../../fixtures/electron";
-import { loadFile } from "../../../fixtures/load-file";
+import { loadFiles } from "../../../fixtures/load-files";
+import { PlayerControls } from "../../../page-objects";
 
 /**
  * GIVEN example.mcap file is loaded
@@ -15,17 +16,19 @@ import { loadFile } from "../../../fixtures/load-file";
  * WHEN the user clicks on the seek backward button
  * THEN the player time should go back to 2025-02-26 10:37:15.547 AM WET
  */
-test("Should update the step size value via settings and verify that change being applied on the player by moving forward and backward", async ({
-  mainWindow,
-}) => {
+test("Should update the step size value via settings and verify that change being applied on the player by moving forward and backward", {
+  tag: "@regression",
+}, async ({ mainWindow }) => {
+  const player = new PlayerControls(mainWindow);
+
   // Given
   const initialTime = "2025-02-26 10:37:15.547 AM WET";
   const forwardedTime = "2025-02-26 10:37:15.947 AM WET";
 
   const filename = "example.mcap";
-  await loadFile({
+  await loadFiles({
     mainWindow,
-    filename,
+    filenames: filename,
   });
 
   // Then
@@ -38,14 +41,14 @@ test("Should update the step size value via settings and verify that change bein
 
   await mainWindow.locator("#stepSizeInput").fill("400");
   await mainWindow.getByText("Done").click();
-  await mainWindow.getByTitle("Seek forward").click();
+  await player.seekForward();
 
   // Then
   const playerForwardedTime = mainWindow.locator(`input[value="${forwardedTime}"]`);
   expect(await playerForwardedTime.inputValue()).toBe(forwardedTime);
 
   // When
-  await mainWindow.getByTitle("Seek backward").click();
+  await player.seekBackward();
 
   // Then
   expect(await playerStartingTime.inputValue()).toBe(initialTime);

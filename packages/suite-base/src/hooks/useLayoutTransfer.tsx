@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 import { enqueueSnackbar } from "notistack";
@@ -15,6 +15,7 @@ import { useLayoutNavigation } from "@lichtblick/suite-base/hooks/useLayoutNavig
 import { Layout } from "@lichtblick/suite-base/services/ILayoutStorage";
 import { Namespace } from "@lichtblick/suite-base/types";
 import { downloadTextFile } from "@lichtblick/suite-base/util/download";
+import { validateLayoutData } from "@lichtblick/suite-base/util/layout";
 import showOpenFilePicker from "@lichtblick/suite-base/util/showOpenFilePicker";
 
 import { useAnalytics } from "../context/AnalyticsContext";
@@ -58,7 +59,17 @@ export function useLayoutTransfer(): UseLayoutTransfer {
         return;
       }
 
-      const data = parsedState as LayoutData;
+      let data: LayoutData;
+      try {
+        data = validateLayoutData(parsedState);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        enqueueSnackbar(`${file.name} is not a valid layout: ${errorMessage}`, {
+          variant: "error",
+        });
+        return;
+      }
+
       const newLayout = await layoutManager.saveNewLayout({
         name: layoutName,
         data,
@@ -101,7 +112,7 @@ export function useLayoutTransfer(): UseLayoutTransfer {
       return;
     }
 
-    void analytics.logEvent(AppEvent.LAYOUT_IMPORT, { numLayouts: fileHandles.length });
+    analytics.logEvent(AppEvent.LAYOUT_IMPORT, { numLayouts: fileHandles.length });
   }, [analytics, isMounted, parseAndInstallLayout]);
 
   const exportLayout = useCallbackWithToast(async () => {
@@ -114,7 +125,7 @@ export function useLayoutTransfer(): UseLayoutTransfer {
     const layoutName = name.length > 0 ? name : "lichtblick-layout";
     const content = JSON.stringify(item, undefined, 2) ?? "";
     downloadTextFile(content, `${layoutName}.json`);
-    void analytics.logEvent(AppEvent.LAYOUT_EXPORT);
+    analytics.logEvent(AppEvent.LAYOUT_EXPORT);
   }, [analytics, getCurrentLayoutState]);
 
   return { importLayout, exportLayout, parseAndInstallLayout };

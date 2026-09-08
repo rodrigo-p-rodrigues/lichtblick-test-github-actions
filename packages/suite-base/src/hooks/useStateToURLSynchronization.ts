@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -48,8 +48,14 @@ export function useStateToURLSynchronization(): void {
   }, [canSeek, debouncedCurrentTime]);
 
   // Sync player state with the url.
+  // When an mcap-bundle lookup key is present, skip writing ds/dsParams to avoid URL length issues.
   useEffect(() => {
     if (stablePlayerUrlState == undefined) {
+      return;
+    }
+
+    const currentUrl = new URL(globalThis.location.href);
+    if (currentUrl.searchParams.get("mcap-bundle")) {
       return;
     }
 

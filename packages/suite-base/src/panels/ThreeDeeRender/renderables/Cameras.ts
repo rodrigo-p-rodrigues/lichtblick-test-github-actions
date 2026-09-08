@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -181,9 +181,7 @@ export class Cameras extends SceneExtension<CameraInfoRenderable> {
     if (renderable) {
       const { cameraInfo, receiveTime, originalMessage } = renderable.userData;
       if (cameraInfo) {
-        const settings = this.renderer.config.topics[topicName] as
-          | Partial<LayerSettingsCameraInfo>
-          | undefined;
+        const settings = this.renderer.config.topics[topicName];
         this.#updateCameraInfoRenderable(
           renderable,
           cameraInfo,
@@ -208,9 +206,7 @@ export class Cameras extends SceneExtension<CameraInfoRenderable> {
       const frameId = this.renderer.normalizeFrameId(cameraInfo.header.frame_id);
 
       // Set the initial settings from default values merged with any user settings
-      const userSettings = this.renderer.config.topics[topic] as
-        | Partial<LayerSettingsCameraInfo>
-        | undefined;
+      const userSettings = this.renderer.config.topics[topic];
       const settings = { ...DEFAULT_SETTINGS, ...userSettings };
 
       renderable = new CameraInfoRenderable(topic, this.renderer, {

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -41,6 +41,13 @@ import WriteThroughLayoutCache from "./WriteThroughLayoutCache";
 import { emitBusyStatus } from "./utils/emitBusyStatus.decorator";
 
 const log = Logger.getLogger(__filename);
+
+export type SaveNewLayout = {
+  name: string;
+  data: LayoutData;
+  permission: LayoutPermission;
+  from?: string;
+};
 
 export default class LayoutManager implements ILayoutManager {
   public static readonly LOCAL_STORAGE_NAMESPACE = "local";
@@ -176,12 +183,7 @@ export default class LayoutManager implements ILayoutManager {
     data: unmigratedData,
     permission,
     from,
-  }: {
-    name: string;
-    data: LayoutData;
-    permission: LayoutPermission;
-    from?: string;
-  }): Promise<Layout> {
+  }: SaveNewLayout): Promise<Layout> {
     const data = migratePanelsState(unmigratedData);
     if (layoutPermissionIsShared(permission)) {
       if (!this.remote) {

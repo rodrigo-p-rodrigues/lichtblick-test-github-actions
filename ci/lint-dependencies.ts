@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -7,7 +7,9 @@
 
 import { info, warning, error } from "@actions/core";
 import depcheck, { Detector } from "depcheck";
-import { glob } from "glob";
+import glob from "glob";
+import fs from "node:fs";
+import { promisify } from "node:util";
 import path from "path";
 
 /**
@@ -39,11 +41,24 @@ const tripleSlashDetector: Detector = (node) => {
   return results;
 };
 
+const globAsync = promisify(glob);
+
 async function run(rootPath: string) {
   info(`Linting dependencies in ${rootPath}...`);
   const options: depcheck.Options = {
     detectors: [...Object.values(depcheck.detector), commentDetector, tripleSlashDetector],
-    ignoreMatches: ["~"],
+    // These come from `/// <reference types="X" />` directives or tsconfig `types` entries that are
+    // satisfied by an `@types/*` package (or root-provided types) rather than a runtime package
+    // literally named "X", so depcheck cannot match them against the workspace's declared
+    // dependencies.
+    ignoreMatches: [
+      "~",
+      "node",
+      "@types/node",
+      "@types/jest",
+      "foxglove__web",
+      "wicg-file-system-access",
+    ],
   };
   return await depcheck(rootPath, options);
 }
@@ -119,9 +134,17 @@ async function getAllWorkspacePackages(roots: string[]) {
       : Array.isArray(workspaceInfo.workspaces?.packages)
         ? workspaceInfo.workspaces.packages
         : [];
+    const cwd = path.resolve(process.cwd(), workspaceRoot);
     for (const pattern of patterns) {
-      for (const packagePath of await glob(pattern)) {
-        workspacePackages.push(path.resolve(process.cwd(), workspaceRoot, packagePath));
+      const matches = await globAsync(pattern, { cwd });
+      for (const packagePath of matches) {
+        const absPath = path.resolve(cwd, packagePath);
+        const packageJsonPath = path.join(absPath, "package.json");
+        if (!fs.existsSync(packageJsonPath)) {
+          info(`Skipping ${absPath} (no package.json)`);
+          continue;
+        }
+        workspacePackages.push(absPath);
       }
     }
   }

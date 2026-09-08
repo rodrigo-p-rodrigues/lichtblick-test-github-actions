@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -7,11 +7,11 @@
 
 import SearchIcon from "@mui/icons-material/Search";
 import { List, ListItem, ListItemText, PopoverPosition, Skeleton } from "@mui/material";
-import { MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MouseEvent, useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLatest } from "react-use";
 import AutoSizer from "react-virtualized-auto-sizer";
-import { ListChildComponentProps, VariableSizeList } from "react-window";
+import { List as VirtualList, RowComponentProps, ListImperativeAPI } from "react-window";
 import { useDebounce } from "use-debounce";
 
 import { filterMap } from "@lichtblick/den/collection";
@@ -25,6 +25,7 @@ import {
 import { DraggedMessagePath } from "@lichtblick/suite-base/components/PanelExtensionAdapter";
 import SearchBar from "@lichtblick/suite-base/components/SearchBar/SearchBar";
 import { ContextMenu } from "@lichtblick/suite-base/components/TopicList/ContextMenu";
+import { SKELETON_ITEMS } from "@lichtblick/suite-base/components/TopicList/constants";
 import { getDraggedMessagePath } from "@lichtblick/suite-base/components/TopicList/getDraggedMessagePath";
 import { PlayerPresence } from "@lichtblick/suite-base/players/types";
 import { MessagePathSelectionProvider } from "@lichtblick/suite-base/services/messagePathDragging/MessagePathSelectionProvider";
@@ -49,7 +50,7 @@ export function TopicList(): React.JSX.Element {
   const playerPresence = useMessagePipeline(selectPlayerPresence);
   const { topics, datatypes } = useDataSourceInfo();
 
-  const listRef = useRef<VariableSizeList>(ReactNull);
+  const listRef = useRef<ListImperativeAPI>(ReactNull);
 
   const treeItems = useTopicListSearch({
     topics,
@@ -66,7 +67,7 @@ export function TopicList(): React.JSX.Element {
 
   const getSelectedItemsAsDraggedMessagePaths = useCallback(() => {
     return filterMap(
-      Array.from(getSelectedIndexes()).sort(),
+      Array.from(getSelectedIndexes()).sort((a, b) => a - b),
       (index): DraggedMessagePath | undefined => {
         const item = latestTreeItems.current[index];
         return item ? getDraggedMessagePath(item) : undefined;
@@ -95,18 +96,18 @@ export function TopicList(): React.JSX.Element {
     setContextMenuState(undefined);
   }, []);
 
-  useEffect(() => {
-    // Discard cached row heights when the filter results change
-    listRef.current?.resetAfterIndex(0);
-  }, [treeItems]);
-
   const itemData = useMemo(() => ({ treeItems, selectedIndexes }), [selectedIndexes, treeItems]);
 
-  const renderRow: React.FC<ListChildComponentProps<typeof itemData>> = useCallback(
-    // `data` comes from the `itemData` we pass to the VariableSizeList below
-    ({ index, style, data }) => {
-      const treeItem = data.treeItems[index]!;
-      const selected = data.selectedIndexes.has(index);
+  const renderRow = useCallback(
+    // `treeItems` and `selectedIndexes` come from the `rowProps` we pass to the VirtualList below
+    ({
+      index,
+      style,
+      treeItems: rowTreeItems,
+      selectedIndexes: rowSelectedIndexes,
+    }: RowComponentProps<typeof itemData>): React.JSX.Element | null => {
+      const treeItem = rowTreeItems[index]!;
+      const selected = rowSelectedIndexes.has(index);
       const onClick = (event: React.MouseEvent) => {
         event.preventDefault();
         onSelect({
@@ -141,6 +142,7 @@ export function TopicList(): React.JSX.Element {
             />
           );
       }
+      return ReactNull;
     },
     [handleContextMenu, onSelect],
   );
@@ -171,8 +173,8 @@ export function TopicList(): React.JSX.Element {
           />
         </header>
         <List dense disablePadding>
-          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((i) => (
-            <ListItem divider key={i}>
+          {SKELETON_ITEMS.map((id) => (
+            <ListItem divider key={id}>
               <ListItemText
                 className={classes.skeletonText}
                 primary={<Skeleton animation={false} width="20%" />}
@@ -204,17 +206,17 @@ export function TopicList(): React.JSX.Element {
           <div style={{ flex: "1 1 100%" }}>
             <AutoSizer>
               {({ width, height }) => (
-                <VariableSizeList
-                  ref={listRef}
-                  width={width}
-                  height={height}
-                  itemCount={treeItems.length}
-                  itemSize={(index) => (treeItems[index]?.type === "topic" ? 50 : 28)}
-                  itemData={itemData}
-                  overscanCount={10}
-                >
-                  {renderRow}
-                </VariableSizeList>
+                <div style={{ width, height }}>
+                  <VirtualList
+                    listRef={listRef}
+                    style={{ width, height }}
+                    rowCount={treeItems.length}
+                    rowHeight={(index, data) => (data.treeItems[index]?.type === "topic" ? 50 : 28)}
+                    rowProps={itemData}
+                    overscanCount={10}
+                    rowComponent={renderRow}
+                  />
+                </div>
               )}
             </AutoSizer>
           </div>

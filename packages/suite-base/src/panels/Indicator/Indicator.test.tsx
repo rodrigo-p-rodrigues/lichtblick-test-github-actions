@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 import { userEvent } from "@storybook/testing-library";
@@ -18,9 +18,9 @@ import {
   IndicatorStyle,
 } from "@lichtblick/suite-base/panels/Indicator/types";
 import PanelSetup from "@lichtblick/suite-base/stories/PanelSetup";
-import BasicBuilder from "@lichtblick/suite-base/testing/builders/BasicBuilder";
 import IndicatorBuilder from "@lichtblick/suite-base/testing/builders/IndicatorBuilder";
 import ThemeProvider from "@lichtblick/suite-base/theme/ThemeProvider";
+import { BasicBuilder } from "@lichtblick/test-builders";
 
 jest.mock("./getMatchingRule", () => ({
   getMatchingRule: jest.fn(),
@@ -66,6 +66,8 @@ describe("Indicator Component", () => {
         updatePanelSettingsEditor: jest.fn(),
         watch: jest.fn(),
         unstable_subscribeMessageRange: jest.fn(),
+        getTopicSchema: jest.fn(),
+        getSchema: jest.fn(),
         ...contextOverride,
       },
     };
@@ -129,17 +131,17 @@ describe("Indicator Component", () => {
     expect(config).toMatchObject(customConfig);
   });
 
-  it.each<IndicatorStyle>(["bulb", "background"])(
-    "renders with the proper style indicator",
-    (style) => {
-      const { matchingRule } = setup({
-        configOverride: {
-          style,
-        },
-      });
+  it.each<IndicatorStyle>([
+    "bulb",
+    "background",
+  ])("renders with the proper style indicator", (style) => {
+    const { matchingRule } = setup({
+      configOverride: {
+        style,
+      },
+    });
 
-      expect(screen.getByTestId(`${style}-indicator`)).toBeTruthy();
-      expect(screen.getByText(matchingRule.label)).toBeTruthy();
-    },
-  );
+    expect(screen.getByTestId(`${style}-indicator`)).toBeTruthy();
+    expect(screen.getByText(matchingRule.label)).toBeTruthy();
+  });
 });

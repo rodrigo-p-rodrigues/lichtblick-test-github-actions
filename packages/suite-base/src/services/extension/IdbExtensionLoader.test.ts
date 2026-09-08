@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -15,8 +15,8 @@ import {
   METADATA_STORE_NAME,
 } from "@lichtblick/suite-base/services/extension/IdbExtensionStorage";
 import { ALLOWED_FILES } from "@lichtblick/suite-base/services/extension/types";
-import BasicBuilder from "@lichtblick/suite-base/testing/builders/BasicBuilder";
 import { ExtensionInfo } from "@lichtblick/suite-base/types/Extensions";
+import { BasicBuilder } from "@lichtblick/test-builders";
 
 import { IdbExtensionLoader } from "./IdbExtensionLoader";
 
@@ -93,10 +93,21 @@ describe("IdbExtensionLoader", () => {
 
       await loader.installExtension({ foxeFileData: foxe as unknown as Uint8Array });
 
-      expect(mockPut).toHaveBeenCalledWith(METADATA_STORE_NAME, expectedExtensionInfo);
+      expect(mockPut).toHaveBeenCalledWith(
+        METADATA_STORE_NAME,
+        expect.objectContaining({
+          ...expectedExtensionInfo,
+          externalId: undefined,
+          size: expect.any(Number),
+        }),
+      );
       expect(mockPut).toHaveBeenCalledWith(EXTENSION_STORE_NAME, {
         content: foxe,
-        info: expectedExtensionInfo,
+        info: expect.objectContaining({
+          ...expectedExtensionInfo,
+          externalId: undefined,
+          size: expect.any(Number),
+        }),
       });
     });
 
@@ -112,10 +123,21 @@ describe("IdbExtensionLoader", () => {
 
       await loader.installExtension({ foxeFileData: foxe as unknown as Uint8Array });
 
-      expect(mockPut).toHaveBeenCalledWith(METADATA_STORE_NAME, info);
+      expect(mockPut).toHaveBeenCalledWith(
+        METADATA_STORE_NAME,
+        expect.objectContaining({
+          ...info,
+          externalId: undefined,
+          size: expect.any(Number),
+        }),
+      );
       expect(mockPut).toHaveBeenCalledWith(EXTENSION_STORE_NAME, {
         content: foxe,
-        info,
+        info: expect.objectContaining({
+          ...info,
+          externalId: undefined,
+          size: expect.any(Number),
+        }),
       });
       expect((await loader.getExtensions())[0]).toBe(info);
     });
@@ -255,7 +277,7 @@ describe("IdbExtensionLoader", () => {
       } as ExtensionInfo;
       mockGet.mockReturnValue({
         info: expectedInfo,
-      } as StoredExtension);
+      });
       const loader = new IdbExtensionLoader("local");
 
       await loader.installExtension({ foxeFileData: foxe as unknown as Uint8Array });

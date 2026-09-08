@@ -1,7 +1,8 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 import { test, expect } from "../../../../fixtures/electron";
-import { loadFile } from "../../../../fixtures/load-file";
+import { loadFiles } from "../../../../fixtures/load-files";
+import { Panels, Sidebar } from "../../../../page-objects";
 
 /**
  * GIVEN a .bag file is loaded
@@ -9,18 +10,20 @@ import { loadFile } from "../../../../fixtures/load-file";
  * AND the user clicks on the "Map" panel
  * THEN the "Map panel" settings should be visible
  */
-test("open map panel after loading a bag file", async ({ mainWindow }) => {
+test("open map panel after loading a bag file", { tag: "@regression" }, async ({ mainWindow }) => {
+  const panels = new Panels(mainWindow);
+  const sidebar = new Sidebar(mainWindow);
+
   /// Given
   const filename = "example.bag";
-  await loadFile({
+  await loadFiles({
     mainWindow,
-    filename,
+    filenames: filename,
   });
 
   // When
-  await mainWindow.getByTestId("AddPanelButton").click();
-  await mainWindow.getByTestId("panel-menu-item Map").click();
-  await mainWindow.getByTestId("panel-settings-left").click();
+  await panels.addPanel("Map");
+  await sidebar.openPanelSettingsTab();
   await mainWindow.getByText("Waiting for first GPS point...").nth(0).click();
 
   // Then

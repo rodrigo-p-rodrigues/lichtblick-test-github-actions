@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -9,6 +9,7 @@ import * as Comlink from "@lichtblick/comlink";
 import { IterableSourceInitializeArgs } from "@lichtblick/suite-base/players/IterablePlayer/IIterableSource";
 import { WorkerSerializedIterableSourceWorker } from "@lichtblick/suite-base/players/IterablePlayer/WorkerSerializedIterableSourceWorker";
 import { MultiIterableSource } from "@lichtblick/suite-base/players/IterablePlayer/shared/MultiIterableSource";
+import { pickDefinedHydrationOverrides } from "@lichtblick/suite-base/players/IterablePlayer/shared/multiFileHydrationOptions";
 
 import { McapIterableSource } from "./McapIterableSource";
 
@@ -21,7 +22,7 @@ export function initialize(
     return Comlink.proxy(wrapped);
   } else if (args.files) {
     const source = new MultiIterableSource(
-      { type: "files", files: args.files },
+      { type: "files", files: args.files, ...pickDefinedHydrationOverrides(args) },
       McapIterableSource,
     );
     const wrapped = new WorkerSerializedIterableSourceWorker(source);
@@ -31,7 +32,10 @@ export function initialize(
     const wrapped = new WorkerSerializedIterableSourceWorker(source);
     return Comlink.proxy(wrapped);
   } else if (args.urls) {
-    const source = new MultiIterableSource({ type: "urls", urls: args.urls }, McapIterableSource);
+    const source = new MultiIterableSource(
+      { type: "urls", urls: args.urls, ...pickDefinedHydrationOverrides(args) },
+      McapIterableSource,
+    );
     const wrapped = new WorkerSerializedIterableSourceWorker(source);
     return Comlink.proxy(wrapped);
   }

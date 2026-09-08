@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -281,7 +281,8 @@ export async function main(): Promise<void> {
       "connect-src": "'self' ws: wss: http: https: package: blob: data: file:",
       "font-src": "'self' data:",
       // Include http in the CSP to allow loading images (i.e. map tiles) from http endpoints like localhost
-      "img-src": "'self' data: https: package: x-foxglove-converted-tiff: http:",
+      // Include blob: to allow loading mesh textures fetched as assets and served via object URLs
+      "img-src": "'self' data: https: package: x-foxglove-converted-tiff: http: blob:",
       "media-src": "'self' data: https: http: blob: file:",
     };
     const cspHeader = Object.entries(contentSecurityPolicy)

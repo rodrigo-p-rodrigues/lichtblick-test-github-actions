@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -55,6 +55,12 @@ export type WorkspaceContextStore = {
     active: undefined | string;
     shown: string[];
   };
+  layoutBrowser: {
+    expandedSections: {
+      personal: boolean;
+      shared: boolean;
+    };
+  };
   playbackControls: {
     repeat: boolean;
     syncInstances: boolean;
@@ -80,6 +86,11 @@ export const WorkspaceContext = createContext<undefined | StoreApi<WorkspaceCont
 WorkspaceContext.displayName = "WorkspaceContext";
 
 export const WorkspaceStoreSelectors = {
+  selectLayoutSectionExpanded: (
+    store: WorkspaceContextStore,
+  ): WorkspaceContextStore["layoutBrowser"]["expandedSections"] => {
+    return store.layoutBrowser.expandedSections;
+  },
   selectPanelSettingsOpen: (store: WorkspaceContextStore): boolean => {
     return store.sidebars.left.open && store.sidebars.left.item === "panel-settings";
   },

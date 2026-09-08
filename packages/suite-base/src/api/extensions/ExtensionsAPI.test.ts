@@ -1,12 +1,15 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
-import { ExtensionInfoWorkspace } from "@lichtblick/suite-base/api/extensions/types";
+import {
+  CreateOrUpdateResponse,
+  ExtensionInfoWorkspace,
+} from "@lichtblick/suite-base/api/extensions/types";
 import { StoredExtension } from "@lichtblick/suite-base/services/IExtensionStorage";
 import { HttpError } from "@lichtblick/suite-base/services/http/HttpError";
 import HttpService from "@lichtblick/suite-base/services/http/HttpService";
-import BasicBuilder from "@lichtblick/suite-base/testing/builders/BasicBuilder";
 import ExtensionBuilder from "@lichtblick/suite-base/testing/builders/ExtensionBuilder";
+import { BasicBuilder } from "@lichtblick/test-builders";
 
 import ExtensionsAPI from "./ExtensionsAPI";
 
@@ -49,8 +52,8 @@ describe("ExtensionsAPI", () => {
       const result = await extensionsAPI.list();
 
       // Then
-      expect(mockGet).toHaveBeenCalledWith("extensions", { workspace });
-      expect(result.length).toBe(extensions.length);
+      expect(mockGet).toHaveBeenCalledWith(`workspaces/${workspace}/extensions`);
+      expect(result).toHaveLength(extensions.length);
     });
 
     it("should handle empty list", async () => {
@@ -115,7 +118,7 @@ describe("ExtensionsAPI", () => {
         workspace,
         fileId: apiResponse.fileId,
         externalId: apiResponse.id,
-      } as StoredExtension);
+      });
     });
 
     it("should return undefined when extension not found", async () => {
@@ -140,10 +143,16 @@ describe("ExtensionsAPI", () => {
       });
 
       const mockFile = new File([BasicBuilder.string()], "test.zip", { type: "application/zip" });
-      const mockApiResponse: StoredExtension = ExtensionBuilder.storedExtension({
-        info: extension.info,
-        workspace,
-      });
+      const mockApiResponse: CreateOrUpdateResponse = {
+        extension: {
+          ...extension.info,
+          createdAt: BasicBuilder.datetime(),
+          updatedAt: BasicBuilder.datetime(),
+          fileId: BasicBuilder.string(),
+          extensionId: extension.info.id,
+          scope: extension.info.namespace!,
+        },
+      };
       const mockHttpService = jest.mocked(HttpService);
       const mockPost = jest.fn().mockResolvedValue(createMockHttpResponse(mockApiResponse));
       mockHttpService.post = mockPost;
@@ -152,13 +161,60 @@ describe("ExtensionsAPI", () => {
       const result = await extensionsAPI.createOrUpdate(extension, mockFile);
 
       // Then
-      expect(mockPost).toHaveBeenCalledWith(`extensions`, expect.any(FormData));
+      expect(mockPost).toHaveBeenCalledWith(
+        `workspaces/${workspace}/extension`,
+        expect.any(FormData),
+      );
       expect(result).toEqual({
-        info: mockApiResponse,
+        info: {
+          ...mockApiResponse.extension,
+          id: mockApiResponse.extension.extensionId,
+          externalId: mockApiResponse.extension.id,
+          namespace: mockApiResponse.extension.scope,
+        },
         content: new Uint8Array(),
         workspace,
-        fileId: mockApiResponse.fileId,
+        fileId: mockApiResponse.extension.fileId,
+        externalId: mockApiResponse.extension.id,
       });
+    });
+
+    it("should serialize form data fields correctly based on type", async () => {
+      // Given
+      const keywords = [BasicBuilder.string(), BasicBuilder.string()];
+      const baseInfo = ExtensionBuilder.extensionInfo();
+      const extension: ExtensionInfoWorkspace = ExtensionBuilder.extensionInfoWorkspace({
+        workspace,
+        info: { ...baseInfo, keywords, description: "", homepage: "" },
+      });
+      const mockFile = new File([BasicBuilder.string()], "test.zip", { type: "application/zip" });
+      const mockApiResponse: CreateOrUpdateResponse = {
+        extension: {
+          ...extension.info,
+          createdAt: BasicBuilder.datetime(),
+          updatedAt: BasicBuilder.datetime(),
+          fileId: BasicBuilder.string(),
+          extensionId: extension.info.id,
+          scope: extension.info.namespace!,
+        },
+      };
+      const mockPost = jest.fn().mockResolvedValue(createMockHttpResponse(mockApiResponse));
+      jest.mocked(HttpService).post = mockPost;
+
+      // When
+      await extensionsAPI.createOrUpdate(extension, mockFile);
+
+      // Then
+      const formData: FormData = mockPost.mock.calls[0][1];
+      // booleans are serialized as strings
+      expect(formData.get("replace")).toBe("true");
+      // objects/arrays are JSON-stringified
+      expect(formData.get("keywords")).toBe(JSON.stringify(keywords));
+      // non-empty strings are included as-is
+      expect(formData.get("name")).toBe(extension.info.name);
+      // empty strings are omitted
+      expect(formData.get("description")).toBeNull();
+      expect(formData.get("homepage")).toBeNull();
     });
   });
 
@@ -175,7 +231,7 @@ describe("ExtensionsAPI", () => {
       const result = await extensionsAPI.remove(extensionId);
 
       // Then
-      expect(mockDelete).toHaveBeenCalledWith(`extensions/${extensionId}`);
+      expect(mockDelete).toHaveBeenCalledWith(`workspaces/${workspace}/extension/${extensionId}`);
       expect(result).toBe(true);
     });
 

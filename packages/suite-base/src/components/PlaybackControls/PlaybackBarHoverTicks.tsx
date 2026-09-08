@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (C) 2023-2025 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
+// SPDX-FileCopyrightText: Copyright (C) 2023-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)<lichtblick@bmwgroup.com>
 // SPDX-License-Identifier: MPL-2.0
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -78,12 +78,7 @@ export default function PlaybackBarHoverTicks(props: Props): React.JSX.Element {
   });
 
   const hoverTimeDisplay = useMemo(() => {
-    if (
-      !hoverValue ||
-      hoverValue.type !== "PLAYBACK_SECONDS" ||
-      !startTime ||
-      hoverValue.value < 0
-    ) {
+    if (hoverValue?.type !== "PLAYBACK_SECONDS" || !startTime || hoverValue.value < 0) {
       return undefined;
     }
     const stamp = add(startTime, fromSec(hoverValue.value));
